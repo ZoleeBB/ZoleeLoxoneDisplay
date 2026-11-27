@@ -128,7 +128,7 @@ void app_main(void)
     esp_sntp_config_t ntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_sntp_init(&ntp));
 
-    if (zld_loxone_start(network_ready) != ESP_OK) {
+    if (zld_loxone_start(network_ready, panel_config_generation) != ESP_OK) {
         boot_failed("Nincs elegendő memória a Loxone-kapcsolathoz.");
         return;
     }
