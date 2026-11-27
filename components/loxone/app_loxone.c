@@ -900,12 +900,12 @@ static esp_err_t home_command_request(const char *card_id, lx_home_command_t act
     return allowed ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
-esp_err_t app_loxone_home_command(const char *card_id, lx_home_command_t action)
+esp_err_t app_loxone_home_command(const char *card_id, unsigned revision, lx_home_command_t action)
 {
     /* Pozíciót csak a külön, revízióval és értékkel ellátott API fogadhat. */
     if (action >= LX_HOME_COMMAND_SHADING_POSITION)
         return ESP_ERR_INVALID_ARG;
-    return home_command_request(card_id, action, false, 0, false, 0, 0, 0);
+    return home_command_request(card_id, action, false, 0, true, revision, 0, 0);
 }
 
 esp_err_t app_loxone_shading_command(const char *card_id, unsigned revision,
@@ -1126,11 +1126,11 @@ bool app_loxone_intercom_credentials(unsigned revision, char username[96], char 
 }
 
 
-unsigned zld_loxone_revision(void)
+unsigned zld_loxone_revision(unsigned panel_generation)
 {
     if (!s_lock) return 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    unsigned revision = s_home_revision;
+    unsigned revision = s_profile && s_profile->generation == panel_generation ? s_home_revision : 0;
     xSemaphoreGive(s_lock);
     return revision;
 }

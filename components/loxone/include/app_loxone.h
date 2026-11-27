@@ -5,7 +5,7 @@
 bool app_loxone_home_snapshot(lx_home_config_t *config, lx_home_values_t *values,
                               unsigned *revision, bool *connected,
                               bool *command_pending, char status[LX_HOME_ERROR_SIZE]);
-esp_err_t app_loxone_home_command(const char *card_id, lx_home_command_t action);
+esp_err_t app_loxone_home_command(const char *card_id, unsigned revision, lx_home_command_t action);
 
 typedef struct
 {

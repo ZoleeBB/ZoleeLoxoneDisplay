@@ -11,7 +11,7 @@ cJSON *zld_loxone_catalog(void);
 esp_err_t zld_loxone_refresh(void);
 bool zld_loxone_refreshing(void);
 bool zld_loxone_status(char *out, size_t size);
-unsigned zld_loxone_revision(void);
+unsigned zld_loxone_revision(unsigned panel_generation);
 bool zld_loxone_card(const char *id, lx_home_value_t *out, bool *supported);
 bool zld_loxone_night(bool *night);
 bool zld_loxone_energy(unsigned tab, lx_values_t *out);
