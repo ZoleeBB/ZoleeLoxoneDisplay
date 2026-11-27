@@ -49,7 +49,25 @@ Válassz minden használt méréshez egy Loxone-állapotot, majd add meg a szorz
 
 A **Kijelző** fülön külön állítható a nappali és az éjszakai fényerő 1–100% között. Az éjszakai módot helyi kezdő- és végidő, illetve Loxone-állapot vezérelheti. Időzítéshez a készülék a Budapest szerinti helyi időt használja.
 
-A **Képernyőkímélő késleltetése** az utolsó érintéstől számított másodperc. Üres mező vagy `0` kikapcsolja. Pozitív értéknél a panel az éjszakai fényerőre vált, félkövér órát, halványított fülikonokat és egyszínű alsó márkafeliratot mutat. Az első érintés visszahozza az aktív lapot.
+A **Képernyőkímélő késleltetése** az utolsó érintéstől számított másodperc. Üres mező vagy `0` kikapcsolja. Pozitív értéknél a panel az éjszakai fényerőre vált, félkövér órát, halványított fülikonokat és egyszínű alsó márkafeliratot mutat. Az első érintés az alapbeállítás mellett visszahozza az aktív lapot.
+
+## Használat Touch-ként
+
+1. A **Kijelző** fülön adj meg pozitív képernyőkímélő-késleltetést. A **Használat Touch-ként** fülön kapcsold be az öt érintőmezőt.
+2. Válaszd ki a sarkot, a funkciót, majd a Miniserver megfelelő blokkját. A sarkok külön-külön állíthatók és üresen is hagyhatók. A célblokkot akkor is kiválaszthatod, ha egyik normál lapra sem tetted ki.
+3. A középső mezőhöz válaszd ki a világításvezérlőt. Igény szerint módosítsd az egymást követő koppintások közötti időt. Az alapérték **0,4 s**, az állítható tartomány **0,15–1,00 s**. Mentsd a profilt.
+
+| Sarokhoz rendelt blokk | Egy koppintás művelete |
+| --- | --- |
+| Nyomógomb | Egy impulzus |
+| Kapcsoló | Átkapcsolás az élő állapot alapján. A haladó beállításban a kapcsoló Tr bemenetére kötött virtuális nyomógomb is választható a tényleges bemeneti impulzushoz. |
+| Redőnyvezérlő | Mozgatás a kiválasztott fel vagy le irányba |
+| Audioserver | Hangerő fel vagy le, következő vagy előző szám, illetve lejátszás/szünet |
+| Világításvezérlő | Következő vagy előző világítási kép, illetve a blokk saját listájából kiválasztott kép |
+
+A középső mező egy, két vagy három koppintásra ugyanennyi `+` parancsot küld a világításvezérlőnek. Ha a gyári dupla/tripla kattintásra épülő szoba- vagy házkikapcsolást használod, Loxone Configban köss egy, a vizualizációban elérhető virtuális nyomógombot a világításvezérlő **M+** bemenetére. A középső mező haladó beállításában válaszd ki ezt a nyomógombot. Így a Miniserver a blokk bemenetén kapja meg az impulzusokat, és a saját programod kezeli a **2C/3C** kimeneteket. [A világításvezérlő bemenetei és kimenetei](https://www.loxone.com/enus/kb/lighting-controller/)
+
+## Kaputelefon és csengőhangok
 
 A **Kaputelefon** fülön a **Csengőhangcsomag letöltése** gombbal telepítheted a Zolee Energy Flow Display projekt hangjait. A panel internetkapcsolatot használ, a fájlokat az SD-kártyára menti. A műveletet kikapcsolt kaputelefon mellett is elindíthatod. Ha a panel csak a helyi hálózatot éri el, nyisd meg a **Helyi ZIP telepítése** szakaszt, válaszd ki a már letöltött `*-ringtones.zip` fájlt, majd nyomd meg a **ZIP feltöltése** gombot. A csomag tömörített és kibontott mérete egyaránt legfeljebb 8 MiB lehet. A böngésző mutatja az átvitel előrehaladását, majd a panel ellenőrzésének eredményét. A telepítés után válassz hangot a **Csengőhang** listából. A **Hangminta ezen az eszközön** a böngészőt futtató telefonon vagy számítógépen szólal meg. Hallgasd meg a kiválasztott hangot, majd a panelhez a **Mentés** gombbal rögzítsd. Az alapértelmezett jelzés **Csőharang**, a **Néma** opció elnémítja a csengetést. A kapunyitás, a videó és a hang beállításai a [kaputelefon útmutatójában](kaputelefon.md) találhatók.
 

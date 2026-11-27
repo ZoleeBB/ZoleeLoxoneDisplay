@@ -36,7 +36,9 @@ A három előnézetet a firmware saját LVGL-felülete rajzolta mintaadatokkal. 
 
 **Megjelenés.** Nyolc fület állíthatsz össze, vezérlőfülenként legfeljebb tizenkét elemmel. A fülekhez 84 monokróm ikonból választhatsz. A szobaháttérhez 32 tájkép és 32 egyszerű mintázat áll rendelkezésre. Egyszínű lapnál a mezők a kiválasztott szín sötétebb árnyalatát kapják. Nagyon sötét háttéren a panel világosabb árnyalatot használ, hogy a gombok és a sorok körvonala jól látszódjon. [Háttérképek és ikonok előnézete](docs/keptar.md)
 
-**Éjszakai használat.** Az éjszakai fényerőt Miniserver-jel vagy helyi időzítés kapcsolja. Ettől függetlenül beállítható az inaktivitási idő. Ha letelik, a halvány fülsor alatt nagy, félkövér óra jelenik meg. A számjegyek nappal szürkék, aktív éjszakai módban tompa vörösek. Legalul az egyszínű „Zolee LOXONE Display” felirat látható a Loxone emblémájával. Az első érintés felébreszti a panelt. Az időkorlát üresen hagyva vagy nullára állítva kikapcsolja az automatikus képernyőkímélőt.
+**Éjszakai használat.** Az éjszakai fényerőt Miniserver-jel vagy helyi időzítés kapcsolja. Ettől függetlenül beállítható az inaktivitási idő. Ha letelik, a halvány fülsor alatt nagy, félkövér óra jelenik meg. A számjegyek nappal szürkék, aktív éjszakai módban tompa vörösek. Legalul az egyszínű „Zolee LOXONE Display” felirat látható a Loxone emblémájával. Alapbeállítással az első érintés felébreszti a panelt. Az időkorlát üresen hagyva vagy nullára állítva kikapcsolja az automatikus képernyőkímélőt.
+
+**Használat Touch-ként.** Az óra képernyőjén a négy sarokhoz külön műveletet rendelhetsz. A széles középső gomb a szoba világítását vezérli egy, két vagy három koppintással. A koppintások közötti idő alapból 0,4 másodperc. A lapokhoz az alsó vonaltól felfelé húzva térhetsz vissza. A kijelző minden ujjletételt rövid, halk kattanással jelez, már a Wi-Fi-beállításnál is. [Az öt érintőmező beállítása](docs/web-config.md#használat-touch-ként)
 
 ![A webes háttérválasztó mintabeállítással](docs/images/admin-background-picker.jpg)
 

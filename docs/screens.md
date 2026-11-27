@@ -38,7 +38,15 @@ A pénzügyi becslés az elődprojekt induló díjaival, **65 Ft/kWh vételi ár
 
 A nappali és az éjszakai fényerő külön állítható. Az éjszakai mód kezdő és befejező időponttal vagy Miniserver-értékkel vezérelhető. Az időzítő a budapesti helyi időt és az óraátállást követi. A **képernyőkímélő** ettől független. A megadott tétlenségi idő után lekapcsolja a vezérlőket, éjszakai fényerőt választ és nagy, félkövér órát jelenít meg. Az óra nappal szürke. Az éjszakai időablakban vagy aktív Miniserver-jelnél tompított pirosra vált. Az átmenet a már látható órán is követhető. Ha a választott időzítő még nem kapott pontos időt, vagy a Miniserver-jel megszakadt, az óra szürke. A felső ikonsor és az alsó „Zolee LOXONE Display” felirat mindkét állapotban halvány szürke.
 
-Az első érintés visszahozza az előző lapot. Nulla másodperc kikapcsolja az automatikus képernyőkímélőt. A bejövő kapucsengés felébreszti a kijelzőt.
+Alapbeállítással az első érintés visszahozza az előző lapot. Nulla másodperc kikapcsolja az automatikus képernyőkímélőt. A bejövő kapucsengés felébreszti a kijelzőt.
+
+## Öt érintőmező az óraképernyőn
+
+Bekapcsolt **Használat Touch-ként** beállításnál az óra látható marad, miközben a négy sarokkal a hozzájuk rendelt eszközöket vezérled. Egy sarok rövid koppintásra működik. A képernyő közepén a halvány ferde vonalakkal határolt, középen kiszélesedő terület egyetlen világításgomb. Dupla vagy tripla koppintáshoz egymás után érintsd meg ezt a területet. Két érintés között alapból legfeljebb 0,4 másodperc telhet el.
+
+A feloldáshoz az alsó vonaltól húzd az ujjadat felfelé, majd emeld fel. Ezzel az előzőleg megnyitott lapra térsz vissza. A feloldás akkor is használható, ha épp megszakadt a kapcsolat a Miniserverrel. A bejövő kapucsengés mindkét képernyőkímélőből megnyitja a kaputelefont. [Gombok hozzárendelése](web-config.md#használat-touch-ként)
+
+A kijelző az első beállítástól kezdve minden új ujjletételnél rövid, halk kattanást ad. Két külön koppintás két kattanás. Egy folyamatos mozdulat, például egy lista görgetése vagy a feloldó húzás, egyet kattan.
 
 ## Első bekapcsolás
 
