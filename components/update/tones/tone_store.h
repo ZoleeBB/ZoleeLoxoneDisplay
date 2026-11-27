@@ -8,7 +8,7 @@
 #define ZLD_CARD_DIR "/sdcard"
 #endif
 #define TONE_ROOT ZLD_CARD_DIR "/zld/tones"
-#define TONE_ARCHIVE TONE_ROOT "/download.zip"
+#define TONE_ARCHIVE_PATH TONE_ROOT "/download.zip"
 #define TONE_ZIP_LIMIT (8U * 1024 * 1024)
 #define TONE_ORIGIN "https://github.com/ZoleeBB/ZoleeEnergyFlowDisplay/releases"
 bool tone_prepare(void);

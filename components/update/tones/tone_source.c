@@ -160,15 +160,15 @@ bool tone_source_download(unsigned *reason) {
     if(!tone_prepare()) goto done;
     atomic_store(&tone_total_bytes,(unsigned)bytes);
     snprintf(url,sizeof(url),TONE_ORIGIN "/download/%s/%s",tag,name);
-    FILE *f=fopen(TONE_ARCHIVE,"wb"); if(!f) goto done;
+    FILE *f=fopen(TONE_ARCHIVE_PATH,"wb"); if(!f) goto done;
     *reason=TONE_NETWORK;
     ok=fetch(url,TONE_ZIP_LIMIT,NULL,f,bytes);
     if(fclose(f)) ok=false;
     if(ok) {
         *reason=TONE_ARCHIVE;
-        ok=tone_install(TONE_ARCHIVE,tag,digest,error);
+        ok=tone_install(TONE_ARCHIVE_PATH,tag,digest,error);
     }
-    unlink(TONE_ARCHIVE);
+    unlink(TONE_ARCHIVE_PATH);
 done:
     free(body);return ok;
 }
