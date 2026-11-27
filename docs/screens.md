@@ -48,7 +48,7 @@ Alapbeállítással az első érintés visszahozza az előző lapot. Nulla máso
 
 **Használat Touch-ként** módban az egyes sarkokra koppintva a hozzájuk rendelt műveletet indíthatod el. A kijelző négy oldalának felezőpontját összekötő rombusz belseje egyetlen világításgomb. Dupla vagy tripla koppintáshoz egymás után érintsd meg a rombusz belsejét. Két érintés között alapból legfeljebb 0,4 másodperc telhet el.
 
-A rombusz vonala három képpont széles. Az óra, az osztóvonal és az alsó „Zolee LOXONE Display” felirat nappal a **Nappali szövegszín** beállítását követi. Az alapértelmezett szürke `#8B8C8E`. Aktív éjszakai módban mindhárom tompa vörösre (`#A04E4E`) vált. A felső ikonsor Touch módban rejtett, alul pedig a felirat és a logó kitakarja a mögöttük futó vonalat.
+A rombusz vonala három képpont széles, nappal és éjjel is 50%-os fedettséggel látszik. Az óra és az alsó felirat teljes fedettségű. Az óra, az osztóvonal és az alsó „Zolee LOXONE Display” felirat nappal a **Nappali szövegszín** beállítását követi. Az alapértelmezett szürke `#8B8C8E`. Aktív éjszakai módban mindhárom tompa vörösre (`#A04E4E`) vált. A felső ikonsor Touch módban rejtett, alul pedig a felirat és a logó kitakarja a mögöttük futó vonalat.
 
 A feloldáshoz az alsó vonaltól húzd az ujjadat felfelé, majd emeld fel. Ezzel az előzőleg megnyitott lapra térsz vissza. A feloldás akkor is használható, ha épp megszakadt a kapcsolat a Miniserverrel. A bejövő kapucsengés mindkét képernyőkímélőből megnyitja a kaputelefont. [Gombok hozzárendelése](web-config.md#használat-touch-ként)
 

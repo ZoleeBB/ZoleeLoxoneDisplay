@@ -54,7 +54,7 @@ A **Képernyőkímélő késleltetése** az utolsó érintéstől számított m�
 ## Használat Touch-ként
 
 1. Első beállításnál mentsd a Miniserver-kapcsolatot, és hozz létre legalább egy normál vagy energiafület, amelyre feloldáskor visszatérhetsz. A **Kijelző** fülön adj meg pozitív képernyőkímélő-késleltetést. A **Használat Touch-ként** fülön kapcsold be az öt érintőmezőt.
-2. A **Nappali szövegszín** mezőben állítsd be az óra, az osztóvonal és az alsó felirat közös színét. Az alapbeállítás szürke, aktív éjszakai módban a panel mindig tompa vöröset használ.
+2. A **Nappali szövegszín** mezőben állítsd be az óra, az osztóvonal és az alsó felirat közös színét. Az alapbeállítás szürke, aktív éjszakai módban a panel mindig tompa vöröset használ. Az osztóvonal mindkét esetben 50%-os fedettséggel jelenik meg.
 3. Válaszd ki a sarkot, a funkciót, majd a Miniserver megfelelő blokkját. A sarkok külön-külön állíthatók és üresen is hagyhatók. A célblokkot akkor is kiválaszthatod, ha egyik normál lapra sem tetted ki.
 4. A középső mezőhöz válaszd ki a világításvezérlőt. Igény szerint módosítsd az egymást követő koppintások közötti időt. Az alapérték **0,4 s**, az állítható tartomány **0,15–1,00 s**. Mentsd a profilt.
 

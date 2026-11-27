@@ -398,7 +398,7 @@ function renderTouch(){
   settings.append(check('Érintési zónák engedélyezése a képernyőkímélőn',t,'enabled'));
   input(settings,'Nappali szövegszín',t,'dayTextColor','color',{'aria-describedby':'touch-color-hint'});
   top.append(el('p','hint','Az óra képernyőjén a négy sarokhoz külön művelet, középre a helyiség világításvezérlője rendelhető.'));
-  const colorHint=el('p','hint','Az óra, az alsó felirat és az osztóvonal nappal a kiválasztott színnel jelenik meg. Éjszaka mindhárom tompa vörös.');
+  const colorHint=el('p','hint','Az óra és az alsó felirat nappal a kiválasztott színnel, éjszaka tompa vörössel jelenik meg. Az osztóvonal mindkét esetben ugyanezt a színt használja 50%-os fedettséggel.');
   colorHint.id='touch-color-hint';top.append(colorHint);
   if(!app.profile.display.saverSeconds){
     const hint=el('p','hint','Az automatikus képernyőkímélő jelenleg ki van kapcsolva. ');

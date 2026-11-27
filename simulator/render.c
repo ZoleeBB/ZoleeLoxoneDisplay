@@ -117,15 +117,21 @@ static void check_saver_chrome(const lv_area_t *footer, uint32_t ink)
         }
         assert(visible > 0 && visible <= 16);
     }
-    /* 45 foknál a három fizikai pixel széles vonásnak legalább két teljes
-     * tintapixele és egy simított széle van egy vízszintes metszetben. */
+    /* A vonás belsejében az 50%-os tinta a fekete alappal keveredik.
+     * A raszterizáló a csatornákat és a fedettségi maszkot is kerekíti. */
     const int sample_y[] = {180, 540};
     for (unsigned i = 0; i < sizeof(sample_y) / sizeof(*sample_y); ++i) {
         for (int x = 180; x <= 540; x += 360) {
+            uint32_t blended = framebuffer[sample_y[i] * SIDE + x] & 0xffffff;
+            for (unsigned shift = 0; shift < 24; shift += 8) {
+                int source = (ink >> shift) & 255;
+                int channel = (blended >> shift) & 255;
+                assert(abs(2 * channel - source) <= 3);
+            }
             unsigned solid = 0, visible = 0;
             for (int dx = -6; dx <= 6; ++dx) {
                 uint32_t pixel = framebuffer[sample_y[i] * SIDE + x + dx] & 0xffffff;
-                if (pixel == ink) ++solid;
+                if (pixel == blended) ++solid;
                 if (pixel) ++visible;
             }
             assert(solid >= 2 && visible >= 4 && visible <= 7);
@@ -151,6 +157,12 @@ void assert_standby(const char *time_text, bool night)
     uint32_t day_ink = fixture_touch && fixture_touch_day_ink
                            ? strtoul(fixture_touch_day_ink + 1, NULL, 16) : 0x8B8C8E;
     uint32_t expected = night ? 0xA04E4E : day_ink;
+    if (fixture_touch) {
+        lv_obj_t *divider = lv_obj_get_child_by_type(layer, 0, &lv_line_class);
+        assert(divider && lv_obj_get_style_line_width(divider, 0) == 3);
+        assert(lv_obj_get_style_line_opa(divider, 0) == 128);
+        assert(lv_color_eq(lv_obj_get_style_line_color(divider, 0), lv_color_hex(expected)));
+    }
     unsigned solid_clock = 0;
     for (int y = 260; y < 460; y++) {
         for (int x = 0; x < SIDE; x++) {
