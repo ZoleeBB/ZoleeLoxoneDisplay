@@ -2,6 +2,10 @@
 
 A webes szerkesztőben nyisd meg a kívánt szobafület. A **Háttér típusa** mezőben az **Egyszínű** lehetőséggel színt választhatsz, a **Háttérkép** lehetőséggel pedig megnyithatod a miniatűrökből álló képtárat. A fülikon külön választható. Az energiafül saját nappali és éjszakai grafikát használ.
 
+A képen a firmware webes felületének háttérválasztója látható mintabeállításokkal. A név szerinti szűrés magyar feliratokra és azonosítókra is működik.
+
+![A webes adminisztráció háttérválasztója](images/admin-background-picker.jpg)
+
 ## A 32 háttér
 
 A 12 fotószerű tájillusztráció között tengerszem, balatoni alkony és a Dunakanyar ihlette látkép is van. A további 20 grafika selyem-, hajtogatott, szintvonalas, dombos és köríves mintákból áll. Az alábbi képen a webes választó magyar nevei szerepelnek.
