@@ -342,7 +342,13 @@ function touchSceneChooser(corner){
       }
       const moods=Array.isArray(data.moods)?data.moods:[];
       fill(moods);
-      if(data.status==='ready' && moods.length){note.remove();return;}
+      if(data.status==='ready' && moods.length){
+        if(corner.sceneId!=null && !moods.some(m=>m.id===corner.sceneId)){
+          note.textContent='A mentett világítási kép már nincs a blokk listájában. Válassz újat.';
+          selectBox.addEventListener('change',()=>note.remove(),{once:true});
+        }else note.remove();
+        return;
+      }
       note.textContent=data.status==='offline'?'A Miniserver nem érhető el. ':
         data.status==='ready'?'A blokk nem adott vissza világítási képet. ':
         data.status==='unsupported'?'Ez a vezérlő nem szolgáltat világítási képeket. ':'A lista beolvasása még tart. ';
@@ -392,6 +398,10 @@ function renderTouch(){
   if(!app.profile.display.saverSeconds){
     const hint=el('p','hint','Az automatikus képernyőkímélő jelenleg ki van kapcsolva. ');
     hint.append(button('Kijelző beállításai',()=>{app.section='display';render();},'text-button'));top.append(hint);
+  }
+  if(!app.controls.length){
+    const missing=el('p','hint','A vezérlőlista még üres. ');
+    missing.append(button('Miniserver adatlista',()=>{app.section='loxone';render();},'text-button'));top.append(missing);
   }
   const cornerPanel=panel('Sarkok');
   const corners=el('div','touch-zones');cornerPanel.append(corners);

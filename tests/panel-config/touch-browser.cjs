@@ -120,8 +120,13 @@ const profileWithoutTouch = {
     assert.equal(await input.inputValue(),'');
     // Offline edits to unrelated settings must retain the configured identity.
     profile.touch.corners[3]={...empty(),type:'switch',uuid:savedMissing,action:'trigger'};
+    profile.touch.corners[0].sceneId=42;
     await page.reload();await touchTab.click();
     assert.equal(await zoneField(3,'Vezérlő').inputValue(),savedMissing);
+    await page.getByText('A mentett világítási kép már nincs a blokk listájában. Válassz újat.').waitFor();
+    assert.equal(await zoneField(0,'Világítási kép').inputValue(),'42');
+    await zoneField(0,'Világítási kép').selectOption('4');
+    assert.equal(await page.getByText('A mentett világítási kép már nincs a blokk listájában. Válassz újat.').count(),0);
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     assert.deepEqual(errors,[]);
