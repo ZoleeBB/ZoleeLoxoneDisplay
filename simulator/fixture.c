@@ -21,12 +21,14 @@ static unsigned active_scene = 2;
 static double target = 22;
 static char selected_ssid[33];
 
+time_t fixture_time = 1795763580;
+bool fixture_use_night_value, fixture_night_value, fixture_night_valid;
+
 time_t __wrap_time(time_t *out)
 {
-    time_t fixed = 1795763580;
     if (out)
-        *out = fixed;
-    return fixed;
+        *out = fixture_time;
+    return fixture_time;
 }
 bool board_display_lock(uint32_t timeout_ms)
 {
@@ -92,6 +94,10 @@ cJSON *panel_config_snapshot(void)
     fclose(file);
     input[n] = 0;
     cJSON *profile = cJSON_Parse(input);
+    if (fixture_use_night_value) {
+        cJSON *settings = cJSON_GetObjectItemCaseSensitive(profile, "display");
+        cJSON_SetValuestring(cJSON_GetObjectItemCaseSensitive(settings, "nightMode"), "value");
+    }
     if (!fixture_complete)
         cJSON_DeleteItemFromObject(profile, "tabs");
     return profile;
@@ -100,9 +106,11 @@ unsigned zld_loxone_revision(unsigned gen)
 {
     return fixture_matched && gen == fixture_generation ? gen : 0;
 }
-bool zld_loxone_night(bool *night)
+bool zld_loxone_night(unsigned generation, bool *night)
 {
-    *night = false;
+    if (generation != fixture_generation || !fixture_matched || !fixture_night_valid || !fixture_online)
+        return false;
+    *night = fixture_night_value;
     return true;
 }
 void app_loxone_home_visible(int page)

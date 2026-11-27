@@ -1219,11 +1219,12 @@ bool zld_loxone_energy(unsigned tab, lx_values_t *out)
     return zld_loxone_energy_at(tab, 0, out);
 }
 
-bool zld_loxone_night(bool *night)
+bool zld_loxone_night(unsigned generation, bool *night)
 {
     if (!s_lock || !night) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    bool valid = lighting_live_locked() && s_night_values.seen[6] &&
+    bool valid = s_profile && s_profile->generation == generation && lighting_live_locked() &&
+                 s_night_values.seen[6] &&
                  (s_night_values.value[6] == 0 || s_night_values.value[6] == 1);
     if (valid) *night = s_night_values.value[6] == 1;
     xSemaphoreGive(s_lock);

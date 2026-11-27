@@ -162,6 +162,8 @@ static void wake_event(lv_event_t *event)
 
 LV_FONT_DECLARE(app_font_standby_132);
 static const uint32_t standby_ink = 0x8B8C8E;
+static const uint32_t standby_night_ink = 0xA04E4E;
+static bool night_confirmed;
 
 static void standby_brand(lv_obj_t *layer)
 {
@@ -199,7 +201,8 @@ static void rest(void)
     lv_obj_set_style_bg_opa(saver_layer, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(saver_layer, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(saver_layer, wake_event, LV_EVENT_PRESSED, NULL);
-    clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_standby_132, standby_ink);
+    clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_standby_132,
+                              night_confirmed ? standby_night_ink : standby_ink);
     lv_obj_center(clock_label);
     standby_brand(saver_layer);
     illuminate(number(display, "nightBrightness", 10));
@@ -222,14 +225,22 @@ static void update_time(void)
     else
         snprintf(clock_text, sizeof(clock_text), "--:--");
     bool next = night;
+    bool known = valid;
     if (!strcmp(str(display, "nightMode"), "value"))
-        zld_loxone_night(&next);
+        known = zld_loxone_night(generation, &next);
     else if (valid) {
         int start = minutes(str(display, "nightStart")), end = minutes(str(display, "nightEnd"));
         int current = local.tm_hour * 60 + local.tm_min;
         next = start > end ? current >= start || current < end : current >= start && current < end;
     }
-    night = next;
+    /* Jelkimaradáskor megtartjuk az utolsó ismert fényerőt. A piros órához
+     * viszont az aktuális profilból érkező, érvényes éjszakai érték kell. */
+    if (known)
+        night = next;
+    bool confirmed = known && next;
+    if (clock_label && confirmed != night_confirmed)
+        lv_obj_set_style_text_color(clock_label, lv_color_hex(confirmed ? standby_night_ink : standby_ink), 0);
+    night_confirmed = confirmed;
 }
 
 static void refresh_config(void)

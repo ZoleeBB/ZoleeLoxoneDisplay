@@ -32,9 +32,13 @@ A pénzügyi becslés az elődprojekt induló díjaival, **65 Ft/kWh vételi ár
 
 ## Éjszakai fényerő és képernyőkímélő
 
-![Készenléti óra halványan látható ikonsorral](images/panel/standby.png)
+| Nappali képernyőkímélő | Éjszakai képernyőkímélő |
+| --- | --- |
+| ![Szürke óra nappal, 07:13-kor](images/panel/standby.png) | ![Tompított piros óra éjjel, 22:13-kor](images/panel/standby-night.png) |
 
-A nappali és az éjszakai fényerő külön állítható. Az éjszakai mód kezdő és befejező időponttal vagy Miniserver-értékkel vezérelhető. Az időzítő a budapesti helyi időt és az óraátállást követi. A **képernyőkímélő** ettől független. A megadott tétlenségi idő után lekapcsolja a vezérlőket, éjszakai fényerőt választ és nagy, félkövér órát jelenít meg. Alul a „Zolee LOXONE Display” felirat látható. Középen az eredeti LOXONE logó a szomszédos két szó színét kapja. Az első érintés visszahozza az előző lapot. Nulla másodperc kikapcsolja az automatikus képernyőkímélőt. A bejövő kapucsengés felébreszti a kijelzőt.
+A nappali és az éjszakai fényerő külön állítható. Az éjszakai mód kezdő és befejező időponttal vagy Miniserver-értékkel vezérelhető. Az időzítő a budapesti helyi időt és az óraátállást követi. A **képernyőkímélő** ettől független. A megadott tétlenségi idő után lekapcsolja a vezérlőket, éjszakai fényerőt választ és nagy, félkövér órát jelenít meg. Az óra nappal szürke. Az éjszakai időablakban vagy aktív Miniserver-jelnél tompított pirosra vált. Az átmenet a már látható órán is követhető. Ha a választott időzítő még nem kapott pontos időt, vagy a Miniserver-jel megszakadt, az óra szürke. A felső ikonsor és az alsó „Zolee LOXONE Display” felirat mindkét állapotban halvány szürke.
+
+Az első érintés visszahozza az előző lapot. Nulla másodperc kikapcsolja az automatikus képernyőkímélőt. A bejövő kapucsengés felébreszti a kijelzőt.
 
 ## Első bekapcsolás
 

@@ -12,4 +12,4 @@ mkdir -p /tmp/zld-images
 /tmp/zld-preview/panel-preview "$PWD/sdcard" "$PWD/simulator/fixture.json" /tmp/zld-images
 ```
 
-Az előnézetek 720 × 720-as PPM-fájlok. A program ellenőrzi a Wi-Fi jelszómezőt, a webes IP-címet, a termosztátparancsokat, a jelenetválasztást, az RGBW-ablakot, az energiafül húzását, a képernyőkímélő fényerejét és az első érintés kizárólagos ébresztését. A napi összesítő számítását és SD-visszaállítását a `tests/daily/run.sh` külön teszteli.
+Az előnézetek 720 × 720-as PPM-fájlok. A program ellenőrzi a Wi-Fi jelszómezőt, a webes IP-címet, a termosztátparancsokat, a jelenetválasztást, az RGBW-ablakot, az energiafül húzását, a képernyőkímélő fényerejét és az első érintés kizárólagos ébresztését. A készenléti órán a teszt képpontokból ellenőrzi a színt az időablak váltásakor, a Miniserver-jel megváltozásakor és jelkimaradáskor. Külön ellenőrzi az alsó feliratot és a felső ikonsort. A napi összesítő számítását és SD-visszaállítását a `tests/daily/run.sh` külön teszteli.
