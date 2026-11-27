@@ -14,9 +14,18 @@ static void response(esp_err_t (*handler)(httpd_req_t*),httpd_req_t *req,const c
     assert(!strncmp(req->status,status,3));
 }
 
+static void remove_session(void) {
+    assert(rename(ROOT "/session.bin", ROOT "/session.old") == 0);
+}
+static esp_err_t simulate_busy_write(httpd_req_t *req) {
+    assert(!zld_card_needs_restart() && !zld_card_needs_restart());
+    return httpd_resp_sendstr(req,"OK");
+}
+
 int main(void) {
     allow=authorize;
     assert(mkdir("card",0777)==0);
+    assert(zld_card_session_start() && zld_card_verify() && zld_card_online());
     char ah[65], bh[65], first[256], second[256], gen2[65], image_sha[65], path[PATH_CAP];
     digest("A",1,ah); digest("BBBB",4,bh);
     snprintf(first,sizeof(first),"%s 1 icons/a.png\n",ah);
@@ -60,6 +69,25 @@ int main(void) {
     img[2043]='Y'; char wrong_sha[65]; digest(img,sizeof(img),wrong_sha);
     r=request(img,sizeof(img),gen2); r.sha=wrong_sha; response(firmware,&r,"400"); assert(!test_switched);
     img[2043]='Z';
+    test_after_write=remove_session;
+    r=request(img,sizeof(img),gen2); r.sha=image_sha; response(firmware,&r,"409"); assert(!test_switched);
+    test_after_write=NULL;
+    assert(rename(ROOT "/session.old", ROOT "/session.bin")==0);
+    assert(!zld_card_needs_restart() && zld_card_online());
     r=request(img,sizeof(img),gen2); r.sha=image_sha; response(firmware,&r,"200"); assert(test_switched);
+    /* A substituted card invalidates authorization even if it contains the
+       same catalog, and an active request defers recovery until fully unwound. */
+    assert(rename(ROOT "/session.bin", ROOT "/session.old")==0);
+    assert(!zld_card_verify() && !zld_assets_ready() && !zld_card_online());
+    assert(!zld_card_needs_restart());
+    assert(rename(ROOT "/session.old", ROOT "/session.bin")==0);
+    assert(!zld_card_needs_restart() && zld_card_online() && zld_assets_ready());
+    uint8_t other[512]={0};
+    FILE *swapped=fopen(ROOT "/session.bin","wb"); assert(swapped);
+    assert(fwrite(other,1,sizeof(other),swapped)==sizeof(other)); fclose(swapped);
+    const httpd_uri_t route={.handler=simulate_busy_write};
+    r=request("",0,gen2); r.user_ctx=(void *)&route;
+    response(guarded_write,&r,"200"); assert(!zld_card_online());
+    assert(zld_card_needs_restart() && !hold_update() && !zld_card_verify());
     puts("Verified delta, interrupted transfer, resume, corruption, board binding and activation.");
 }

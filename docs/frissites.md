@@ -2,6 +2,12 @@
 
 Az első USB-telepítés után nyisd meg a kijelzőn látható IP-címet, majd a **Frissítés** oldalt. Közvetlenül az `/update` címen is elérhető. A panelhez FAT32-es microSD-kártya szükséges.
 
+## A kártya eltávolítása vagy cseréje
+
+A kijelző írható microSD-kártyát igényel. Induláskor egy munkamenet-azonosítót ír a kártyára, majd működés közben két másodpercenként visszaolvassa. Az első olvasási hiba felfüggeszti a normál kezelést. Ha ugyanaz a kártya a következő ellenőrzéskor elérhető, a működés folytatódik. Két egymás utáni hiba után a panel újraindul, és az ekkor behelyezett kártyáról tölti be a beállításait. Kártya nélkül az indítóképernyő behelyezésre vár.
+
+A webes profil olvasásánál, mentésekor és a firmware aktiválása előtt a készülék azonnal ellenőrzi a munkamenetet. Ha folyamatban van egy frissítési művelet, a helyreállító újraindítás megvárja a művelet lezárását. Tervezett kártyacsere előtt kapcsold ki a panelt, hogy az éppen írt fájlok mentése befejeződhessen.
+
 ## Első képcsomag
 
 1. Kattints a **Képcsomag letöltése az SD-kártyára** gombra. Az internetkapcsolattal rendelkező kijelző a saját firmware-éhez tartozó Git-commitból tölti le a hiányzó fájlokat. A böngésző mutatja a haladást, a letöltés a lap bezárása után is folytatódik.

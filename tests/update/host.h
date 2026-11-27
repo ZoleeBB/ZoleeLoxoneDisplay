@@ -16,6 +16,7 @@ typedef int esp_err_t;
 #define BOARD_SILICON "rev1"
 #define ZLD_SOURCE_REV "1111111111111111111111111111111111111111"
 #define ZLD_CARD_DIR "card"
+static void esp_fill_random(void *p,size_t n) { memset(p,0x7D,n); }
 
 typedef SHA256_CTX mbedtls_sha256_context;
 #define mbedtls_sha256_init(h) ((void)(h))
@@ -28,10 +29,11 @@ typedef void *httpd_handle_t;
 typedef struct {
     size_t content_len, available, offset;
     const unsigned char *body;
+    void *user_ctx;
     const char *generation, *target, *index, *sha;
     char response[2048], status[96];
 } httpd_req_t;
-typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); } httpd_uri_t;
+typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); void *user_ctx; } httpd_uri_t;
 #define HTTP_GET 1
 #define HTTP_POST 2
 static int httpd_req_get_hdr_value_str(httpd_req_t *r, const char *key, char *value, size_t cap) {
@@ -75,7 +77,11 @@ static int esp_ota_write(esp_ota_handle_t h,const void *data,size_t n) {
     memcpy(test_flash+test_wrote,data,n); test_wrote+=n; return 0;
 }
 #define esp_ota_abort(h) ((void)0)
-#define esp_ota_end(h) (0)
+static void (*test_after_write)(void);
+static int esp_ota_end(esp_ota_handle_t h) {
+    if (test_after_write) test_after_write();
+    return 0;
+}
 static int esp_ota_get_partition_description(const esp_partition_t *p,esp_app_desc_t *d) {
     *d=test_app; return 0;
 }

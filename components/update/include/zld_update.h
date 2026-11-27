@@ -8,6 +8,15 @@
 extern "C" {
 #endif
 
+/* Establish identity after SD mount and before loading settings. */
+bool zld_card_session_start(void);
+/* Fast cached availability used by render/network workers. */
+bool zld_card_online(void);
+/* Verify the session marker on the actual card before accessing protected data. */
+bool zld_card_verify(void);
+/* Call in app_main at ~2 s intervals. A true return reserves a safe restart. */
+bool zld_card_needs_restart(void);
+
 /* Call in task context after mounting /sdcard, or again after remount. */
 bool zld_assets_check(void);
 bool zld_assets_ready(void);

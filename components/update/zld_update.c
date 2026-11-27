@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,6 +18,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_ota_ops.h"
+#include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "mbedtls/sha256.h"
@@ -47,7 +49,82 @@ typedef struct {
 #define ACTIVE_COUNT (sizeof(active_entries) / sizeof(active_entries[0]))
 #define MARKER_PREFIX "ZLD-BUNDLE-1/" STR(BOARD_SKU) "/" BOARD_SILICON "/"
 static const char running_marker[] = MARKER_PREFIX ZLD_GENERATION "/END";
-static atomic_bool ready;
+static atomic_bool ready, card_online;
+static uint8_t card_nonce[16];
+/* The HTTP task and optional download worker hold one reference each. A negative
+ * value reserves the imminent reboot and prevents a racing write from starting. */
+static atomic_int update_users;
+static bool mkdir_if_missing(const char *path);
+
+bool zld_card_online(void)
+{
+    return atomic_load(&card_online) && atomic_load(&update_users) >= 0;
+}
+
+static bool read_session(void)
+{
+    /* Read one full sector through the POSIX fd. FatFs' full-sector path goes
+     * directly to disk even when the directory entry is still in its cache. */
+    uint8_t sector[512];
+    int fd = open(ROOT "/session.bin", O_RDONLY);
+    if (fd < 0) return false;
+    ssize_t n = read(fd, sector, sizeof(sector));
+    int err = close(fd);
+    return !err && n == sizeof(sector) && !memcmp(sector, card_nonce, sizeof(card_nonce));
+}
+
+bool zld_card_session_start(void)
+{
+    /* Called exactly once after mount, before profile loading or starting tasks. */
+    atomic_store(&card_online, false);
+    uint8_t sector[512] = {0};
+    esp_fill_random(card_nonce, sizeof(card_nonce));
+    memcpy(sector, card_nonce, sizeof(card_nonce));
+    if (!mkdir_if_missing(ROOT)) return false;
+    int fd = open(ROOT "/session.bin", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) return false;
+    bool ok = write(fd, sector, sizeof(sector)) == sizeof(sector) && fsync(fd) == 0;
+    if (close(fd)) ok = false;
+    ok = ok && read_session();
+    atomic_store(&card_online, ok);
+    return ok;
+}
+
+bool zld_card_verify(void)
+{
+    if (!zld_card_online()) return false;
+    if (read_session()) return zld_card_online();
+    atomic_store(&card_online, false);
+    return false;
+}
+
+bool zld_card_needs_restart(void)
+{
+    /* app_main is the only polling caller. A short I/O failure temporarily
+     * suspends controls, then the same card can pass the following sample. */
+    static unsigned failures;
+    if (atomic_load(&update_users) < 0) return true;
+    if (read_session()) {
+        failures = 0;
+        atomic_store(&card_online, true);
+        return false;
+    }
+    atomic_store(&card_online, false);
+    if (failures < 2) ++failures;
+    if (failures < 2) return false;
+    int idle = 0;
+    return atomic_compare_exchange_strong(&update_users, &idle, -1);
+}
+
+static bool hold_update(void)
+{
+    int users = atomic_load(&update_users);
+    while (users >= 0) {
+        if (atomic_compare_exchange_weak(&update_users, &users, users + 1)) return true;
+    }
+    return false;
+}
+
 enum { CLOUD_IDLE, CLOUD_RUNNING, CLOUD_OK, CLOUD_ERROR };
 static atomic_int cloud_state;
 static atomic_uint cloud_position;
@@ -68,6 +145,7 @@ static bool blob_path(const asset_entry_t *entry, char *out, size_t cap)
 bool zld_asset_path(const char *logical, char *out, size_t capacity)
 {
     if (!logical || !out || !capacity) return false;
+    if (!zld_card_online()) { out[0] = 0; return false; }
     out[0] = '\0';
     size_t lo = 0, hi = ACTIVE_COUNT;
     while (lo < hi) {
@@ -120,19 +198,21 @@ static bool blob_ok(const asset_entry_t *entry)
 
 bool zld_assets_check(void)
 {
+    if (!zld_card_verify()) return false;
     for (size_t i = 0; i < ACTIVE_COUNT; ++i) {
         if (!blob_ok(&active_entries[i])) {
             atomic_store(&ready, false);
             return false;
         }
     }
-    atomic_store(&ready, true);
-    return true;
+    bool same_card = zld_card_verify();
+    atomic_store(&ready, same_card);
+    return same_card;
 }
 
 bool zld_assets_ready(void)
 {
-    return atomic_load(&ready);
+    return atomic_load(&ready) && zld_card_online();
 }
 
 /* One sorted, whitespace-free logical name per line keeps staging bounded even
@@ -326,7 +406,7 @@ static bool install_temp(const asset_entry_t *entry)
 {
     char path[PATH_CAP], shard[sizeof(BLOBS) + 4];
     snprintf(shard, sizeof(shard), BLOBS "/%.2s", entry->sha);
-    if (!mkdir_if_missing(shard) || !blob_path(entry, path, sizeof(path))) return false;
+    if (!zld_card_verify() || !mkdir_if_missing(shard) || !blob_path(entry, path, sizeof(path))) return false;
     if (blob_ok(entry)) return unlink(PART) == 0;
     if (unlink(path) && errno != ENOENT) return false;
     return rename(PART, path) == 0;
@@ -410,6 +490,7 @@ static void download_card(void *unused)
     mbedtls_sha256_free(&transfer.hash);
     if (ok) ok = zld_assets_check();
     atomic_store(&cloud_state, ok ? CLOUD_OK : CLOUD_ERROR);
+    atomic_fetch_sub(&update_users, 1);
     vTaskDelete(NULL);
 }
 
@@ -420,9 +501,11 @@ static esp_err_t fetch_card(httpd_req_t *req)
         return fail(req, "409 Conflict", "Ehhez a helyi buildhez válaszd ki a .zld fájlt.");
     staged[0] = 0;
     atomic_store(&cloud_position, 0);
+    if (!hold_update()) return fail(req, "503 Service Unavailable", "A kártya nem érhető el.");
     atomic_store(&cloud_state, CLOUD_RUNNING);
     if (xTaskCreate(download_card, "sd_download", 8192, NULL, 4, NULL) != pdPASS) {
         atomic_store(&cloud_state, CLOUD_ERROR);
+        atomic_fetch_sub(&update_users, 1);
         return fail(req, "503 Service Unavailable", "Nincs elég memória a letöltés elindításához.");
     }
     httpd_resp_set_status(req, "202 Accepted");
@@ -521,7 +604,7 @@ static esp_err_t firmware(httpd_req_t *req)
         memcmp(desc.project_name, esp_app_get_description()->project_name, sizeof(desc.project_name)) ||
         !image_matches(part, req->content_len))
         return fail(req, "400 Bad Request", "A firmware és a képcsomag nem tartozik ehhez a kijelzőhöz.");
-    if (!walk_stage(verify_entry, NULL, staged))
+    if (!walk_stage(verify_entry, NULL, staged) || !zld_card_verify())
         return fail(req, "409 Conflict", "A szükséges SD-fájlok ellenőrzése sikertelen.");
     if (esp_ota_set_boot_partition(part) != ESP_OK)
         return fail(req, "500 Internal Server Error", "Az új firmware nem aktiválható.");
@@ -531,6 +614,15 @@ static esp_err_t firmware(httpd_req_t *req)
     return sent;
 }
 
+static esp_err_t guarded_write(httpd_req_t *req)
+{
+    const httpd_uri_t *route = req->user_ctx;
+    if (!hold_update()) return fail(req, "503 Service Unavailable", "A kijelző újraindul.");
+    esp_err_t rc = route->handler(req);
+    atomic_fetch_sub(&update_users, 1);
+    return rc;
+}
+
 esp_err_t zld_update_register(httpd_handle_t server, zld_update_authorize_t authorize)
 {
     if (!server || !authorize) return ESP_ERR_INVALID_ARG;
@@ -538,7 +630,7 @@ esp_err_t zld_update_register(httpd_handle_t server, zld_update_authorize_t auth
     const esp_timer_create_args_t timer = {.callback = restart, .name = "ota_restart"};
     esp_err_t err = esp_timer_create(&timer, &restart_timer);
     if (err != ESP_OK) return err;
-    const httpd_uri_t routes[] = {
+    static const httpd_uri_t routes[] = {
         {.uri="/update", .method=HTTP_GET, .handler=page},
         {.uri="/update/info", .method=HTTP_GET, .handler=info},
         {.uri="/update/download", .method=HTTP_POST, .handler=fetch_card},
@@ -548,7 +640,12 @@ esp_err_t zld_update_register(httpd_handle_t server, zld_update_authorize_t auth
         {.uri="/update/firmware", .method=HTTP_POST, .handler=firmware},
     };
     for (size_t i = 0; i < sizeof(routes)/sizeof(routes[0]); ++i) {
-        err = httpd_register_uri_handler(server, &routes[i]);
+        httpd_uri_t route = routes[i];
+        if (route.method == HTTP_POST) {
+            route.handler = guarded_write;
+            route.user_ctx = (void *)&routes[i];
+        }
+        err = httpd_register_uri_handler(server, &route);
         if (err != ESP_OK) {
             while (i > 0) {
                 --i;

@@ -40,6 +40,13 @@ done:
     return ok;
 }
 bool panel_web_authorize(httpd_req_t *r,bool write) {
+    /* Protected profile/catalog reads and mutations require the mounted
+       session's actual media. Thumbnails use the cheap periodic health state. */
+    bool check=write || !strncmp(r->uri,"/api/",5);
+    if(!(check?zld_card_verify():zld_card_online())) {
+        reply(r,"503 Service Unavailable","Az induláskor használt microSD-kártya nem érhető el.");
+        return false;
+    }
     if(!login(r)) {
         httpd_resp_set_hdr(r,"WWW-Authenticate","Basic realm=\"ZoleeLoxoneDisplay\", charset=\"UTF-8\"");
         reply(r,"401 Unauthorized","Bejelentkezés szükséges.");
@@ -96,6 +103,10 @@ static esp_err_t config_post(httpd_req_t *r) {
     mbedtls_platform_zeroize(body,n+1);
     free(body);
     char error[192]="Érvénytelen JSON-dokumentum.";
+    if(!zld_card_verify()) {
+        cJSON_Delete(doc);
+        return reply(r,"503 Service Unavailable","Mentés közben a microSD-kártya elérhetetlenné vált.");
+    }
     esp_err_t rc=doc?panel_config_save(doc,error,sizeof(error)):ESP_ERR_INVALID_ARG;
     cJSON_Delete(doc);
     if(rc==ESP_OK) return json_reply(r,panel_config_snapshot());
