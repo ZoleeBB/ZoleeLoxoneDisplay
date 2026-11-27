@@ -11,6 +11,12 @@ Négyhüvelykes szobai érintőkijelző Loxone Miniserverhez. A **Waveshare ESP3
 
 A felső ikonsorral válthatsz a szoba világítása, hőmérséklete, árnyékolása vagy akár a ház energiaáramlása között. A fülek sorrendjét és tartalmát a kijelző saját, magyar nyelvű webes felületén szerkesztheted. A panel közvetlenül a Miniserverhez csatlakozik. A működéshez FAT32-es microSD-kártya szükséges.
 
+| Helyiségklíma | Világítási képek | Energiaáramlás |
+| --- | --- | --- |
+| ![A termosztát képernyője](docs/images/panel/thermostat.png) | ![Az aktív világítási kép](docs/images/panel/lighting.png) | ![Az energiaáramlás nézete](docs/images/panel/energy.png) |
+
+A három előnézetet a firmware saját LVGL-felülete rajzolta mintaadatokkal. [Kijelzőképek és érintési műveletek](docs/screens.md)
+
 ## Első bekapcsolás
 
 1. Azonosítsd a cikkszámot és az ESP32-P4 **v1.x vagy v3.x** szilíciumrevízióját. Az adott profil **USB** képét írd a panelre, majd helyezd be a microSD-kártyát. [Bináris kiválasztása és USB-telepítés](docs/hardver-es-forditas.md)
@@ -38,6 +44,7 @@ A felső ikonsorral válthatsz a szoba világítása, hőmérséklete, árnyéko
 
 | Útmutató | Tartalom |
 | --- | --- |
+| [Kijelző és érintéses kezelés](docs/screens.md) | Teljes lapos vezérlés, napi energiaösszesítő és képernyőkímélő |
 | [Hardver és fordítás](docs/hardver-es-forditas.md) | Cikkszámok, szilíciumrevíziók, build és első USB-telepítés |
 | [Frissítés és helyreállítás](docs/frissites.md) | Egygombos képtelepítés, kötelező SD-ellenőrzés, megszakított OTA |
 | [Miniserver](docs/miniserver.md) | Hitelesítés, struktúra, állapotok, parancsok és kapcsolatvesztés |
