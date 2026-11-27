@@ -72,6 +72,61 @@ static bool has_label(lv_obj_t *parent, const char *text)
     return false;
 }
 
+void assert_awake_tabs(void)
+{
+    /* Mind a négy ikonból legyen látható képpont, az üres sáv nem elegendő. */
+    for (int tab = 0; tab < 4; ++tab) {
+        unsigned lit = 0;
+        for (int y = 0; y < 80; ++y)
+            for (int x = tab * 180; x < (tab + 1) * 180; ++x)
+                if ((framebuffer[y * SIDE + x] & 255) > 40) ++lit;
+        assert(lit > 75);
+    }
+}
+
+static void check_saver_chrome(const lv_area_t *footer)
+{
+    /* A Touch-feliratot a normál óra teljes sorainak képpontjaival vetjük össze.
+     * A rombusz mindkét alsó éle metszené ezt a területet takarás nélkül. */
+    enum { FOOTER_Y = 659, FOOTER_H = 35 };
+    static uint32_t reference[FOOTER_H][SIDE];
+    assert(footer->y1 == FOOTER_Y && footer->y2 == FOOTER_Y + FOOTER_H - 1);
+    if (!fixture_touch) {
+        memcpy(reference, framebuffer + FOOTER_Y * SIDE, sizeof(reference));
+        assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0);
+        return;
+    }
+    for (int y = footer->y1; y <= footer->y2; ++y) {
+        for (int x = footer->x1; x <= footer->x2; ++x) {
+            if (abs(abs(x - 360) + abs(y - 360) - 360) <= 3)
+                assert(reference[y - FOOTER_Y][x] == framebuffer[y * SIDE + x]);
+        }
+    }
+    /* Az egész felső sáv üres a két egypixeles, semleges rombuszélen kívül. */
+    for (int y = 0; y < 80; ++y) {
+        unsigned visible = 0;
+        for (int x = 0; x < SIDE; ++x) {
+            uint32_t pixel = framebuffer[y * SIDE + x] & 0xffffff;
+            if (!pixel) continue;
+            assert(abs(abs(x - 360) - y) <= 2);
+            assert((pixel & 255) <= 23 && pixel == (pixel & 255) * 0x010101);
+            ++visible;
+        }
+        assert(visible > 0 && visible <= 8);
+    }
+    /* A keret minden élét követjük két szemközti vízszintes metszetben. */
+    const int sample_y[] = {180, 540};
+    for (unsigned i = 0; i < sizeof(sample_y) / sizeof(*sample_y); ++i) {
+        for (int x = 180; x <= 540; x += 360) {
+            uint32_t stroke = 0;
+            for (int dx = -1; dx <= 1; ++dx)
+                stroke |= framebuffer[sample_y[i] * SIDE + x + dx] & 0xffffff;
+            assert(stroke > 0 && stroke <= 0x1f1f1f);
+        }
+    }
+    assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0x515356);
+}
+
 void assert_standby(const char *time_text, bool night)
 {
     lv_obj_t *layer = lv_obj_get_child(lv_screen_active(), -1);
@@ -102,16 +157,7 @@ void assert_standby(const char *time_text, bool night)
         assert(abs(red - blue) < 5);
     }
 
-    /* Nappal és éjjel azonos, halvány osztóvonalak és az alsó húzásjelző. */
-    if (fixture_touch) {
-        assert((framebuffer[180 * SIDE + 159] & 0xffffff) == 0x191b1d);
-        assert((framebuffer[180 * SIDE + 560] & 0xffffff) == 0x191b1d);
-        assert((framebuffer[360 * SIDE + 22] & 0xffffff) == 0x191b1d);
-        assert((framebuffer[360 * SIDE + 698] & 0xffffff) == 0x191b1d);
-        assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0x515356);
-    } else {
-        assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0);
-    }
+    check_saver_chrome(&area);
 
     /* A valódi PNG az átfestés után a két felirattal azonos tintaárnyalatot ad. */
     lv_color_t ink = lv_obj_get_style_text_color(lv_obj_get_child(footer, 0), 0);

@@ -53,6 +53,7 @@ static void unlock(void)
     up(350, 530);
     step(500);
     assert(fixture_page == 3);
+    assert_awake_tabs();
     quiet();
 }
 
@@ -63,14 +64,21 @@ static void zones_and_edges(void)
     expect_at(110, 530, BL);
     expect_at(600, 530, BR);
     /* Mindkét oldalon pontosan a ferde határvonal két szomszédos képpontja. */
-    expect_at(159, 180, TL);
-    expect_at(160, 180, CENTER);
-    expect_at(559, 180, CENTER);
-    expect_at(560, 180, TR);
-    expect_at(20, 359, TL);
-    expect_at(20, 360, BL);
-    expect_at(695, 359, TR);
-    expect_at(695, 360, BR);
+    expect_at(179, 180, TL);
+    expect_at(180, 180, CENTER);
+    expect_at(540, 180, CENTER);
+    expect_at(541, 180, TR);
+    expect_at(0, 359, TL);
+    expect_at(0, 360, CENTER);
+    expect_at(0, 361, BL);
+    expect_at(719, 358, TR);
+    expect_at(719, 359, CENTER);
+    expect_at(719, 360, CENTER);
+    expect_at(719, 362, BR);
+    expect_at(359, 0, TL);
+    expect_at(360, 0, CENTER);
+    expect_at(361, 0, TR);
+    expect_at(360, 667, CENTER);
     expect_at(100, 667, BL);
     expect_at(100, 668, BL);
     expect_at(40, 700, BL);
@@ -154,9 +162,9 @@ static void canceled_drags(void)
     up(360, 360);
     step(fixture_tap_window + 60);
     quiet();
-    down(159, 180); /* Átlépi a zónahatárt, de a mozgás csak két képpont. */
-    down(161, 180);
-    up(161, 180);
+    down(179, 180); /* Átlépi a zónahatárt, de a mozgás csak két képpont. */
+    down(181, 180);
+    up(181, 180);
     down(100, 130);
     step(650);
     up(100, 130);
@@ -236,8 +244,8 @@ void test_touch_saver(void)
     fixture_touch = fixture_has_touch_section = true;
     fixture_generation++;
     idle();
-    assert_standby("07:13", false);
     snapshot("standby-touch");
+    assert_standby("07:13", false);
     fixture_time += 15 * 3600;
     fixture_night_value = true;
     step(800);
