@@ -1,7 +1,6 @@
 #include "board.h"
 #include <stdatomic.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "esp_check.h"
 #include "esp_event.h"
@@ -250,24 +249,34 @@ esp_err_t board_wifi_scan(board_ap_t *out, size_t capacity, size_t *count)
     *count = 0;
     if (!wifi_available || xSemaphoreTake(station_lock, 0) != pdTRUE)
         return ESP_ERR_INVALID_STATE;
-    wifi_ap_record_t *records = calloc(capacity, sizeof(*records));
-    esp_err_t error = records ? esp_wifi_scan_start(NULL, true) : ESP_ERR_NO_MEM;
+    /* A C6 RSSI szerint adja vissza a BSSID-ket. Egy mesh több rádiója
+     * ugyanahhoz az SSID-hez tartozik: a legerősebb képviseli a listában. */
+    esp_err_t error = esp_wifi_scan_start(NULL, true);
     if (error == ESP_OK) {
-        uint16_t total = capacity;
-        error = esp_wifi_scan_get_ap_records(&total, records);
-        if (error != ESP_OK)
-            esp_wifi_clear_ap_list();
-        for (size_t i = 0; error == ESP_OK && i < total; i++) {
-            if (!records[i].ssid[0])
+        uint16_t remaining = 0;
+        error = esp_wifi_scan_get_ap_num(&remaining);
+        while (error == ESP_OK && remaining && *count < capacity) {
+            wifi_ap_record_t record;
+            error = esp_wifi_scan_get_ap_record(&record);
+            if (error != ESP_OK)
+                break;
+            remaining--;
+            if (!record.ssid[0])
+                continue;
+            size_t i = 0;
+            while (i < *count && strncmp(out[i].ssid, (const char *)record.ssid, 32))
+                i++;
+            if (i < *count)
                 continue;
             board_ap_t *ap = &out[(*count)++];
-            memcpy(ap->ssid, records[i].ssid, 32);
+            memcpy(ap->ssid, record.ssid, 32);
             ap->ssid[32] = '\0';
-            ap->rssi = records[i].rssi;
-            ap->secured = records[i].authmode != WIFI_AUTH_OPEN;
+            ap->rssi = record.rssi;
+            ap->secured = record.authmode != WIFI_AUTH_OPEN;
         }
+        if (error != ESP_OK || remaining)
+            esp_wifi_clear_ap_list();
     }
-    free(records);
     xSemaphoreGive(station_lock);
     return error;
 }
