@@ -5376,7 +5376,7 @@ static int stbi__png_test(stbi__context *s)
    return r;
 }
 
-static int stbi__png_info(stbi__context *s, stbi_info_res *res) 
+static int stbi__png_info(stbi__context *s, stbi_info_res *res)
 {
    stbi__png p;
    p.s = s;
@@ -6752,7 +6752,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
          break;
       }
       totalbytes += stride;
-      
+
       // allocate this frame
       frame = (stbi__gif_frame_hdr *)stbi__malloc_mad3(g->w, g->h, 4, sizeof(*frame));
       if (!frame) {

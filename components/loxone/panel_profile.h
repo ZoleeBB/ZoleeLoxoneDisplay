@@ -1,5 +1,5 @@
 #pragma once
-#include "zld_loxone.h"
+#include "app_loxone_home_model.h"
 typedef struct {
     lx_mapping_t fields[LX_FIELD_COUNT];
     bool enabled;

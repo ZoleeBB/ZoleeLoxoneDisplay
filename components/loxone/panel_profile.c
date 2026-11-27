@@ -120,3 +120,40 @@ bool panel_profile_read(panel_profile_t *out, const cJSON *panel, const char *pa
         copy_text(ic->video_password, sizeof(ic->video_password), camera_password) &&
         copy_text(ic->ringtone, sizeof(ic->ringtone), text(door, "ringtone"));
 }
+
+cJSON *lx_home_document_parse(const char *body, size_t size)
+{
+    if (!body || size < 2 || size > LX_HOME_JSON_MAX || memchr(body, 0, size))
+        return NULL;
+    unsigned depth = 0;
+    bool quoted = false, escaped = false;
+    for (size_t i = 0; i < size; i++)
+    {
+        char ch = body[i];
+        if (quoted)
+        {
+            if (escaped)
+                escaped = false;
+            else if (ch == '\\')
+                escaped = true;
+            else if (ch == '"')
+                quoted = false;
+        }
+        else if (ch == '"')
+            quoted = true;
+        else if (ch == '{' || ch == '[')
+        {
+            if (++depth > 8)
+                return NULL;
+        }
+        else if (ch == '}' || ch == ']')
+        {
+            if (!depth)
+                return NULL;
+            depth--;
+        }
+    }
+    if (depth || quoted)
+        return NULL;
+    return cJSON_ParseWithLengthOpts(body, size + 1, NULL, true);
+}

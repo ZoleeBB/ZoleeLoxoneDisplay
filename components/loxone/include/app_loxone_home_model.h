@@ -132,20 +132,6 @@ static inline bool lx_home_page_range(const lx_home_config_t *config, unsigned p
 }
 
 
-/* Kizárólag konfiguráció, jelszó/token nélkül. Régi telepítésnél NULL = üres.
- * Hibánál az out változatlan; a hiba mezőt és elemsorszámot is tartalmaz. */
-bool lx_home_config_parse(const cJSON *root, lx_home_config_t *out,
-                          char error[LX_HOME_ERROR_SIZE]);
-cJSON *lx_home_config_json(const lx_home_config_t *config);
-
-/* Hiányzó átlagteljesítmény vagy tiltott javaslat sohasem ad indítási igényt. */
-bool lx_home_consumer_start_kw(const lx_home_consumer_t *consumer, double *kw);
-
 /* Korlátos JSON-beolvasás a hálózati/SD-s belépési pontoknak. A túl mély
  * dokumentumot még a rekurzív cJSON-parser előtt elutasítjuk. body[size] terminátor szükséges; hívó szabadítja. */
 cJSON *lx_home_document_parse(const char *body, size_t size);
-
-/* Üres/hiányzó jelszó csak azonos kamerához és felhasználóhoz tartható meg. */
-bool lx_intercom_credentials_update(lx_intercom_config_t *next,
-                                    const lx_intercom_config_t *saved,
-                                    const cJSON *entry);

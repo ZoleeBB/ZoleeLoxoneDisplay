@@ -1,6 +1,8 @@
 /* Loxone Direct, adapted from ZoleeEnergyFlowDisplay. The worker is the
  * sole WS owner. Configuration, pages and credentials switch together. */
 #include "panel_profile.h"
+#include "zld_loxone.h"
+#include "audio_schedule.h"
 #include "app_intercom_audio.h"
 #include "esp_heap_caps.h"
 #define intercom_held(revision) app_intercom_audio_active_for(revision)
@@ -37,7 +39,7 @@ static atomic_flag s_starting = ATOMIC_FLAG_INIT;
 static QueueHandle_t s_messages, s_requests, s_home_commands;
 static panel_profile_t *s_profile;
 static bool (*s_network_ready)(void);
-static lx_home_config_t *s_home;
+static _Atomic(lx_home_config_t *) s_home;
 static bool s_home_busy;
 static unsigned s_home_revision;
 #ifdef ESP_PLATFORM
@@ -581,7 +583,7 @@ static void worker(void *arg)
             panel_profile_t *previous = s_profile;
             s_profile = next;
             s_home = &next->home;
-            s_home_busy = false;
+            s_home_busy = uxQueueMessagesWaiting(s_requests) != 0;
             s_home_revision++;
             s_intercom_generation++;
             s_intercom_ringing = false;
@@ -868,9 +870,6 @@ static esp_err_t home_command_request(const char *card_id, lx_home_command_t act
      * nyugtája késhet vagy elmaradhat, a hang akkor sem maradhat nyitva. */
     if (allowed && door && action == LX_HOME_COMMAND_PULSE) {
         app_intercom_audio_gate_opened(request.intercom_revision);
-#ifdef APP_INTERCOM_DISTRIBUTED
-        app_intercom_control_gate(request.intercom_revision);
-#endif
     }
     return allowed ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
@@ -1075,11 +1074,6 @@ bool app_loxone_intercom_snapshot(app_intercom_snapshot_t *out)
     out->audio_active = out->config.enabled && out->connected && app_intercom_audio_active_for(out->revision);
     out->audio_elsewhere = false;
     out->ringtone_silenced = out->config.enabled && panel_door_silenced(out->revision);
-#ifdef APP_INTERCOM_DISTRIBUTED
-    out->audio_elsewhere = app_intercom_control_other(out->revision);
-    out->ringtone_silenced = app_intercom_control_silenced(out->revision);
-    out->audio_active = out->audio_active || (out->config.enabled && out->connected && intercom_held(out->revision));
-#endif
     char command[96];
     out->gate_supported = lx_home_command_build(s_home, s_catalog, LX_INTERCOM_GATE_ID,
                                                 LX_HOME_COMMAND_PULSE, command);
