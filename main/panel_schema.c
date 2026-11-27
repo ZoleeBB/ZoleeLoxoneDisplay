@@ -97,7 +97,7 @@ static bool touch_corner(const cJSON *corner) {
 }
 
 static bool touch(const cJSON *section) {
-    if (!fields(section,"enabled tapWindowMs corners center") || !cJSON_IsBool(GET(section,"enabled")) ||
+    if (!fields(section,"enabled tapWindowMs dayTextColor corners center") || !cJSON_IsBool(GET(section,"enabled")) ||
         !integer(section,"tapWindowMs",150,1000)) return false;
     const cJSON *corners=GET(section,"corners"), *center=GET(section,"center"), *corner;
     if (!cJSON_IsArray(corners) || cJSON_GetArraySize(corners)!=4 ||
@@ -159,6 +159,8 @@ bool panel_schema_validate(const cJSON *p,char *error,size_t n) {
     if (!display(GET(p,"display"))) goto fail;
     why="Ellenőrizd a Touch négy sarkának típusát és műveletét, a középső világítás UUID-jét és a 150–1000 ms-os érintésközt.";
     if (!touch(GET(p,"touch"))) goto fail;
+    why="A Touch nappali szövegszínét #RRGGBB formátumban add meg.";
+    if (!color(str(GET(p,"touch"),"dayTextColor"))) goto fail;
     why="A kaputelefonhoz helyi HTTP/MJPEG-videócím és csengetésállapot szükséges.";
     if (!intercom(GET(p,"intercom"))) goto fail;
     const cJSON *tabs=GET(p,"tabs"), *tab;

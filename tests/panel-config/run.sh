@@ -19,5 +19,6 @@ echo incomplete >panel.json
 echo broken >device.key
 ./panel-test fail-closed
 mkdir touch
-(cd touch && ../panel-test touch-old-file && ../panel-test touch-migrate && ../panel-test touch-legacy-client && ../panel-test touch-reload)
+(cd touch && ../panel-test touch-old-file && ../panel-test touch-migrate && ../panel-test touch-legacy-client &&
+ ../panel-test touch-reload && ../panel-test touch-old-color-file && ../panel-test touch-color-migrate)
 echo 'Panel settings transaction, recovery and credential tests passed.'

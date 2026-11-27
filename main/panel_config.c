@@ -30,8 +30,8 @@ static const char defaults[] =
     "\"cameraUser\":\"\",\"speakerVolume\":55,\"microphoneGain\":80,\"ringtone\":\"tubular-chime.wav\",\"ringtoneRepeat\":false},"
     "\"tabs\":[]}";
 
-/* Schema v1 profiles written before Touch existed are upgraded in memory.
- * A save from a client which omits the new section preserves the active mapping. */
+/* Schema v1 profiles are upgraded in memory. Older web clients may omit
+ * the whole Touch section or only its newer color setting on save. */
 #define EMPTY_CORNER "{\"type\":\"\",\"uuid\":\"\",\"action\":\"\",\"sceneId\":0}"
 static const char touch_defaults[] =
     "{\"enabled\":false,\"tapWindowMs\":400,\"corners\":["
@@ -40,11 +40,19 @@ static const char touch_defaults[] =
 
 static bool ensure_touch(cJSON *p,const cJSON *existing) {
     if(!cJSON_IsObject(p)) return false;
-    if(GET(p,"touch")) return true;
-    cJSON *touch=existing?cJSON_Duplicate(existing,true):cJSON_Parse(touch_defaults);
-    if(touch && cJSON_AddItemToObject(p,"touch",touch)) return true;
-    cJSON_Delete(touch);
-    return false;
+    cJSON *touch=GET(p,"touch");
+    if(!touch) {
+        touch=existing?cJSON_Duplicate(existing,true):cJSON_Parse(touch_defaults);
+        if(!touch || !cJSON_AddItemToObject(p,"touch",touch)) {
+            cJSON_Delete(touch);
+            return false;
+        }
+    }
+    if(cJSON_IsObject(touch) && !GET(touch,"dayTextColor")) {
+        const char *color=cJSON_GetStringValue(GET(existing,"dayTextColor"));
+        return cJSON_AddStringToObject(touch,"dayTextColor",color?color:"#8B8C8E")!=NULL;
+    }
+    return true;
 }
 
 static const char *string(const cJSON *obj,const char *key) {
