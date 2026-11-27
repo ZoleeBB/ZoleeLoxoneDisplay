@@ -17,3 +17,15 @@ A kiinduló állapot a [ZoleeEnergyFlowDisplay 6786e84 kiadási fája](https://g
 ## Készülékes ellenőrzés
 
 Az elfogadási próbákat mindkét cikkszámon rögzíteni kell az adott panel szilíciumrevíziójával és firmware-azonosítójával együtt. A memória összevetési pontjai az üres lap, a világítási részletek, az energiakép, a hívás megnyitása és tíz bontás utáni nyugalmi állapot. Külön mérendő a szabad belső DMA-memória és a legnagyobb összefüggő blokk. Az automatizált fordítás és a készülékes próba eredményét külön vezetjük.
+
+## Az INIT ág ellenőrzései
+
+| Ellenőrzés | Eredmény |
+| --- | --- |
+| Firmware és USB-kép | Az ESP-IDF 5.5.4 mindkét cikkszámra, v1.x és v3.x processzorprofilra lefordította és összelinkelte az alkalmazást. A csomagellenőrzés a firmware azonosítóját és az egyes SD-fájlok SHA-256 értékét is ellenőrzi. |
+| Valódi kezelőfelület szimulált adatokkal | LVGL 9.5.0 és szimulált érintőeszköz ellenőrzi a Wi-Fi-billentyűzetet, a füleket, a termosztátot, az aktív hangulatot, az RGBW-kimenetet és az óra ébresztését. |
+| Webes szerkesztő | A kiszolgált HTML/CSS/JS felületet asztali és 390 képpont széles mobil Chromiumban, helyi API-tesztadatokkal próbáltuk ki. A háttérképek és ikonok a tényleges csomagból töltődtek be. |
+| Kártya és frissítés | A tesztek lefedik a hiányzó fájlt, a sérült SHA-t, a megszakított másolást, a folytatást, a téves célpanel elutasítását és az SD eltávolítását a firmware írása közben. |
+| Állapot és profil | Automatizált próba ellenőrzi a titkosított mentést és helyreállítást, a Loxone-értékek és lapok hozzárendelését, a napi integrálást és a SIP/RTP hangprotokollt. |
+
+A fizikai beüzemelés nyitott próbái a panelre írás, a valós Miniserverrel végzett állapot- és parancspróba, a hangszóró és mikrofon, az Ethernetes panel, valamint a készüléken mért fényerő és szabad DMA-memória. Az előnézetek és az ismételhető szimulátorteszt a kezelési útmutatóból nyithatók meg. [Kijelzőképek és tesztkörnyezet](screens.md)
