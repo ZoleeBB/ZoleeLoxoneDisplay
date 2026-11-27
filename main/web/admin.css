@@ -15,3 +15,12 @@ audio{width:min(100%,430px)}
 .local-zip .stack{margin-top:12px;max-width:430px}
 .local-zip button{justify-self:start}
 .local-zip progress{width:100%;accent-color:var(--lime)}
+
+.touch-zones{margin-top:16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.touch-zone{display:grid;align-content:start;gap:12px;margin:0;padding:14px;border:1px solid var(--border);border-radius:10px;min-width:0}
+.touch-zone legend{padding:0 6px;color:var(--lime)}
+.touch-input{border-top:1px solid var(--border);padding-top:12px}
+.touch-input summary,.text-button{color:var(--lime);cursor:pointer}
+.touch-input .field,.touch-input .hint,.touch-scene .hint{margin-top:9px}
+.text-button{border:0;background:none;text-decoration:underline;padding:0}
+@media(max-width:640px){.touch-zones{grid-template-columns:1fr;gap:10px}}

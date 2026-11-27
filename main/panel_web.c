@@ -129,6 +129,14 @@ static esp_err_t controls_get(httpd_req_t *r) {
     cJSON_AddStringToObject(result,"status",status);
     return json_reply(r,result);
 }
+static esp_err_t touch_moods_get(httpd_req_t *r) {
+    if(!panel_web_authorize(r,false)) return ESP_OK;
+    char query[80],uuid[LX_UUID_LEN];
+    if(httpd_req_get_url_query_str(r,query,sizeof(query))!=ESP_OK ||
+       httpd_query_key_value(query,"uuid",uuid,sizeof(uuid))!=ESP_OK || !lx_uuid_valid(uuid))
+        return reply(r,"400 Bad Request","Érvénytelen világításvezérlő-azonosító.");
+    return json_reply(r,zld_touch_moods(uuid));
+}
 static esp_err_t controls_refresh(httpd_req_t *r) {
     bool write=r->method==HTTP_POST;
     if(!panel_web_authorize(r,write)) return ESP_OK;
@@ -199,6 +207,7 @@ httpd_handle_t panel_web_start(void) {
         {.uri="/api/config",.method=HTTP_GET,.handler=config_get},
         {.uri="/api/config",.method=HTTP_POST,.handler=config_post},
         {.uri="/api/controls",.method=HTTP_GET,.handler=controls_get},
+        {.uri="/api/touch/moods",.method=HTTP_GET,.handler=touch_moods_get},
         {.uri="/api/controls/refresh",.method=HTTP_POST,.handler=controls_refresh},
         {.uri="/api/controls/refresh",.method=HTTP_GET,.handler=controls_refresh},
         {.uri="/api/ringtones/preview",.method=HTTP_GET,.handler=ringtone_preview},

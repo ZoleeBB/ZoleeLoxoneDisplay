@@ -266,6 +266,148 @@ function renderDisplay(){
     input(night,'Éjszaka kezdete',d,'nightStart','time'); input(night,'Éjszaka vége',d,'nightEnd','time');
   } else night.append(field('Éjszakai mód állapota',mappingInput(d,'nightUuid',app.controls,'uuid')));
 }
+const touchCornerNames=['Bal felső','Jobb felső','Bal alsó','Jobb alsó'];
+const touchTypes={'':'Nincs hozzárendelve',pulse:'Nyomógomb',switch:'Kapcsoló',shading:'Árnyékolás',
+  audio:'Audiolejátszó',lighting:'Világításvezérlő'};
+const touchActions={
+  pulse:{trigger:'Impulzus'},switch:{trigger:'Impulzus'},shading:{up:'Fel impulzus',down:'Le impulzus'},
+  audio:{volumeUp:'Hangerő növelése',volumeDown:'Hangerő csökkentése',next:'Következő szám',
+    previous:'Előző szám',playPause:'Lejátszás / szünet'},
+  lighting:{next:'Következő világítási kép',previous:'Előző világítási kép',scene:'Adott világítási kép'}
+};
+function blankCorner(){return {type:'',uuid:'',action:'',sceneId:0};}
+function touchProfile(){
+  return app.profile.touch??={enabled:false,tapWindowMs:400,corners:touchCornerNames.map(blankCorner),center:{uuid:'',inputUuid:''}};
+}
+function touchEligible(type,row){
+  if(!row.control_uuid || row.secured || row.action_uuid==='')return false;
+  switch(type){
+    case 'pulse':return row.touch_button===true;
+    case 'switch':return row.touch_switch===true;
+    case 'lighting':return row.type==='LightControllerV2' && row.lighting_blocked===false;
+    case 'shading':return ['Jalousie','CentralJalousie'].includes(row.type) && row.shading_blocked===false;
+    case 'audio':return row.controls_type==='audio' && row.controls_blocked===false;
+    case 'input':return row.touch_input===true;
+    default:return false;
+  }
+}
+function option(value,label){
+  const o=el('option','',label);o.value=String(value);return o;
+}
+function touchController(label,type,uuid,update,placeholder='Válassz vezérlőt'){
+  const s=el('select');s.setAttribute('aria-label',label);s.append(option('',placeholder));
+  const unique=new Map();
+  for(const row of app.controls)
+    if(touchEligible(type,row) && !unique.has(row.control_uuid))unique.set(row.control_uuid,rowLabel(row,false)||row.control_uuid);
+  for(const [key,name] of [...unique].sort((a,b)=>a[1].localeCompare(b[1],'hu')))s.append(option(key,name));
+  if(uuid && !unique.has(uuid))s.append(option(uuid,'Mentett vezérlő · '+uuid));
+  s.value=uuid||'';s.onchange=()=>{update(s.value);changed();render();};
+  return field(label,s);
+}
+function touchVirtualInput(binding,label,heading,empty,hint){
+  const details=el('details','touch-input span');details.open=!!binding.inputUuid;
+  details.append(el('summary','',heading),touchController(label,'input',binding.inputUuid,uuid=>{
+    binding.inputUuid=uuid;
+  },empty),el('p','hint',hint));
+  return details;
+}
+function touchSceneChooser(corner){
+  const wrapper=el('div','touch-scene'),selectBox=el('select'),note=el('p','hint');
+  selectBox.setAttribute('aria-label','Világítási kép');
+  wrapper.append(field('Világítási kép',selectBox),note);
+  const uuid=corner.uuid;
+  function fill(items){
+    selectBox.replaceChildren(option('','Válassz világítási képet'));
+    const seen=new Set();
+    for(const m of items){
+      if(!Number.isInteger(m.id) || m.id<0 || m.id>2147483647 || seen.has(m.id))continue;
+      seen.add(m.id);selectBox.append(option(m.id,m.name||String(m.id)));
+    }
+    if(Number.isInteger(corner.sceneId) && !seen.has(corner.sceneId))
+      selectBox.append(option(corner.sceneId,'Mentett világítási kép · '+corner.sceneId));
+    selectBox.value=corner.sceneId==null?'':String(corner.sceneId);
+    selectBox.disabled=!items.length;
+  }
+  selectBox.onchange=()=>{corner.sceneId=selectBox.value===''?null:Number(selectBox.value);changed();};
+  fill([]);
+  if(!uuid){note.textContent='Először válassz világításvezérlőt.';return wrapper;}
+  let attempts=0;
+  async function load(){
+    if(!wrapper.isConnected)return;
+    try{
+      const data=await getJSON('/api/touch/moods?uuid='+encodeURIComponent(uuid));
+      if(!wrapper.isConnected)return;
+      if(data.status==='loading' && ++attempts<20){
+        note.textContent='Világítási képek beolvasása…';setTimeout(load,750);return;
+      }
+      const moods=Array.isArray(data.moods)?data.moods:[];
+      fill(moods);
+      if(data.status==='ready' && moods.length){note.remove();return;}
+      note.textContent=data.status==='offline'?'A Miniserver nem érhető el. ':
+        data.status==='ready'?'A blokk nem adott vissza világítási képet. ':
+        data.status==='unsupported'?'Ez a vezérlő nem szolgáltat világítási képeket. ':'A lista beolvasása még tart. ';
+    }catch{if(!wrapper.isConnected)return;note.textContent='A lista lekérése sikertelen. ';}
+    note.append(button('Újrapróbálás',()=>{attempts=0;note.textContent='Betöltés…';load();},'text-button'));
+  }
+  // Render attaches the fresh fieldset before the first request is made.
+  queueMicrotask(load);return wrapper;
+}
+function touchCorner(corner,index){
+  const box=el('fieldset','touch-zone');box.append(el('legend','',touchCornerNames[index]));
+  const type=select(corner,'type',touchTypes,()=>{
+    delete corner.inputUuid;
+    Object.assign(corner,{uuid:'',action:Object.keys(touchActions[corner.type]||{})[0]||'',sceneId:0});render();
+  });
+  type.setAttribute('aria-label','Funkció');box.append(field('Funkció',type));
+  if(!corner.type)return box;
+  box.append(touchController('Vezérlő',corner.type,corner.uuid,uuid=>{
+    corner.uuid=uuid;delete corner.inputUuid;if(corner.action==='scene')corner.sceneId=null;
+  }));
+  const action=select(corner,'action',touchActions[corner.type],()=>{
+    corner.sceneId=corner.action==='scene'?null:0;render();
+  });
+  action.setAttribute('aria-label','Művelet');box.append(field('Művelet',action));
+  if(corner.action==='scene')box.append(touchSceneChooser(corner));
+  if(corner.type==='switch' && corner.uuid)
+    box.append(touchVirtualInput(corner,'Virtuális nyomógomb a Tr bemenethez','Loxone Configban bekötött Tr bemenet',
+      'Közvetlen átkapcsolás','Alapból a panel a kapcsoló visszajelzett állapotát váltja át. Tr-impulzushoz válaszd a Configban a kapcsoló Tr bemenetére kötött virtuális nyomógombot.'));
+  return box;
+}
+function touchError(t){
+  if(!t)return '';
+  if(!Number.isInteger(t.tapWindowMs) || t.tapWindowMs<150 || t.tapWindowMs>1000)
+    return 'A középső koppintások közötti idő 0,150 és 1,000 másodperc között lehet.';
+  for(const [i,c] of t.corners.entries()){
+    if(!c.type)continue;
+    if(!c.uuid)return touchCornerNames[i]+' sarok: válassz vezérlőt.';
+    if(c.action==='scene' && !Number.isInteger(c.sceneId))return touchCornerNames[i]+' sarok: válassz világítási képet.';
+  }
+  return '';
+}
+function renderTouch(){
+  const t=touchProfile(),top=panel('Használat Touch-ként');
+  const settings=grid(top);
+  settings.append(check('Érintési zónák engedélyezése a képernyőkímélőn',t,'enabled'));
+  top.append(el('p','hint','Az óra képernyőjén a négy sarokhoz külön művelet, középre a helyiség világításvezérlője rendelhető.'));
+  if(!app.profile.display.saverSeconds){
+    const hint=el('p','hint','Az automatikus képernyőkímélő jelenleg ki van kapcsolva. ');
+    hint.append(button('Kijelző beállításai',()=>{app.section='display';render();},'text-button'));top.append(hint);
+  }
+  const cornerPanel=panel('Sarkok');
+  const corners=el('div','touch-zones');cornerPanel.append(corners);
+  t.corners.forEach((c,i)=>corners.append(touchCorner(c,i)));
+  const center=panel('Középső érintési zóna'),g=grid(center);
+  g.append(touchController('Középső világításvezérlő','lighting',t.center.uuid,uuid=>{
+    t.center.uuid=uuid;t.center.inputUuid='';
+  },'Nincs hozzárendelve'));
+  const gap=el('input');gap.type='number';gap.min='0.15';gap.max='1';gap.step='0.001';
+  gap.value=Number.isInteger(t.tapWindowMs)?t.tapWindowMs/1000:'';
+  gap.oninput=()=>{t.tapWindowMs=gap.value && gap.validity.valid?Math.round(gap.valueAsNumber*1000):null;changed();};
+  g.append(field('Koppintások közötti megengedett szünet (mp)',gap));
+  if(t.center.uuid)
+    g.append(touchVirtualInput(t.center,'Virtuális nyomógomb az M+ bemenethez','Loxone Configban bekötött M+ bemenet',
+      'Közvetlen világításvezérlés','Az egy, kettő vagy három koppintás alapból ugyanennyi + parancsot küld. A blokk 2C/3C kimeneteihez válaszd ki a Configban a fényvezérlő M+ bemenetére kötött virtuális nyomógombot.'));
+}
 function uploadToneZip(file,onProgress){
   return new Promise((resolve,reject)=>{
     const request=new XMLHttpRequest();
@@ -431,7 +573,7 @@ function render(){
   for(const b of document.querySelectorAll('[data-section]')){
     if(b.dataset.section===app.section)b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
   }
-  ({tabs:renderTabs,loxone:renderLoxone,display:renderDisplay,intercom:renderIntercom})[app.section]();
+  ({tabs:renderTabs,loxone:renderLoxone,display:renderDisplay,intercom:renderIntercom,touch:renderTouch})[app.section]();
 }
 for(const b of document.querySelectorAll('[data-section]'))b.onclick=()=>{app.section=b.dataset.section;render();};
 async function getJSON(url){
@@ -456,6 +598,8 @@ async function fetchControls(){
   app.connected=!!response.connected;app.connectionStatus=response.status||'';
 }
 save.onclick=async()=>{
+  const issue=touchError(app.profile?.touch);
+  if(issue){app.section='touch';render();say(issue,true);return;}
   app.busy=true;save.disabled=true;editor.inert=true;
   try{
     const body={...app.profile,...app.secrets};
