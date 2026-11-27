@@ -35,6 +35,8 @@ jobs:
         run: |
           tests/panel-config/run.sh
           tests/daily/run.sh
+          cc -std=c11 -Wall -Wextra -Werror -Imain tests/test_panel_palette.c main/panel_palette.c -lm -o /tmp/test-panel-palette
+          /tmp/test-panel-palette
           node --check main/web/admin.js
           python3 -m unittest discover -s tests -p test_update.py -v
           python3 tests/test_visual_assets.py

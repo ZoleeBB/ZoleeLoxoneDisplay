@@ -42,34 +42,14 @@ static lx_light_value_t light_edit;
 static uint16_t *light_wheel_pixels;
 static lv_image_dsc_t light_wheel_image;
 
-static bool home_night;
+static panel_palette_t palette;
+static void lighting_ui_refresh_rows(void);
+static void lighting_ui_sync_picker(const lx_light_circuit_t *circuit);
 
 static void bg_color_if_changed(lv_obj_t *obj, lv_color_t color, lv_style_selector_t selector)
 {
     if (!lv_color_eq(lv_obj_get_style_bg_color(obj, selector), color))
         lv_obj_set_style_bg_color(obj, color, selector);
-}
-
-static void text_color_if_changed(lv_obj_t *obj, lv_color_t color, lv_style_selector_t selector)
-{
-    if (!lv_color_eq(lv_obj_get_style_text_color(obj, selector), color))
-        lv_obj_set_style_text_color(obj, color, selector);
-}
-
-static void lighting_ui_refresh_rows(void);
-static void lighting_ui_sync_picker(const lx_light_circuit_t *circuit);
-
-static uint32_t light_ui_background(void)
-{
-    return home_night ? 0x20343A : 0xF0F6F1;
-}
-static uint32_t light_ui_foreground(void)
-{
-    return home_night ? 0xEFF6F5 : 0x142B35;
-}
-static uint32_t light_ui_muted(void)
-{
-    return home_night ? 0xABC3C5 : 0x52686A;
 }
 
 static void *light_ui_alloc(size_t count, size_t size)
@@ -108,7 +88,7 @@ static void light_ui_hidden(lv_obj_t *object, bool hidden)
 
 static lv_obj_t *light_ui_label(lv_obj_t *parent, const char *text, int x, int y, int width)
 {
-    lv_obj_t *label = panel_label(parent, text, x, y, &app_font_20, light_ui_foreground());
+    lv_obj_t *label = panel_label(parent, text, x, y, &app_font_20, palette.surface_ink);
     lv_obj_set_width(label, width);
     lv_obj_set_height(label, lv_font_get_line_height(&app_font_20));
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
@@ -309,9 +289,7 @@ static lv_obj_t *light_ui_slider(lv_obj_t *parent, int x, int y, int width, ligh
     lv_obj_set_pos(slider, x, y);
     lv_obj_set_size(slider, width, 14);
     lv_slider_set_range(slider, 0, 100);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(home_night ? 0x49656A : 0xC5D6CE), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x008C83), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x42CFC0), LV_PART_KNOB);
+    panel_control_slider(slider, &palette);
     lv_obj_set_style_pad_all(slider, 8, LV_PART_KNOB);
     lv_obj_set_ext_click_area(slider, 16);
     lv_obj_remove_flag(slider, LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
@@ -420,7 +398,7 @@ static bool light_ui_wheel_create(void)
             if (hue < 0)
                 hue += 360;
             uint32_t rgb = saturation > 100
-                             ? light_ui_background()
+                             ? palette.surface
                              : light_ui_hsv((unsigned)hue, (unsigned)saturation, 100);
             light_wheel_pixels[y * LIGHT_WHEEL_SIZE + x] =
                 (uint16_t)(((rgb >> 8) & 0xF800) | ((rgb >> 5) & 0x07E0) | ((rgb >> 3) & 0x001F));
@@ -453,10 +431,10 @@ static void light_ui_picker_create(light_ui_row_t *row, const lx_light_circuit_t
     light_picker_row = row;
     light_edit = circuit->actual;
     light_picker = panel_box(
-        row->root, 0, LIGHT_ROW_HEIGHT, LIGHT_ROW_WIDTH, LIGHT_ROW_EXTRA, light_ui_background(), 0);
+        row->root, 0, LIGHT_ROW_HEIGHT, LIGHT_ROW_WIDTH, LIGHT_ROW_EXTRA, palette.surface, 0);
     lv_obj_remove_flag(light_picker, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
-    light_mode_buttons[0] = panel_button(light_picker, "Színes", 220, 8, 166, 48);
-    light_mode_buttons[1] = panel_button(light_picker, "Fehérfény", 402, 8, 166, 48);
+    light_mode_buttons[0] = panel_button(light_picker, "Színes", 220, 8, 166, 48, &palette);
+    light_mode_buttons[1] = panel_button(light_picker, "Fehérfény", 402, 8, 166, 48, &palette);
     for (unsigned i = 0; i < 2; ++i)
     {
         lv_obj_set_style_text_font(light_mode_buttons[i], &app_font_20, 0);
@@ -470,7 +448,9 @@ static void light_ui_picker_create(light_ui_row_t *row, const lx_light_circuit_t
     lv_obj_remove_flag(light_white_preview, LV_OBJ_FLAG_CLICKABLE);
     light_white_caption = light_ui_label(light_white_preview, "", 0, 62, 150);
     lv_obj_set_style_text_align(light_white_caption, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(light_white_caption, lv_color_hex(0x193037), 0);
+    lv_obj_set_style_text_color(light_white_caption, lv_color_hex(0x111315), 0);
+    lv_obj_set_style_bg_opa(light_white_caption, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(light_white_caption, lv_color_hex(0xFFF4E3), 0);
     light_temperature_caption =
         light_ui_label(light_picker, "Színhőmérséklet", 220, 74, 360);
     light_temperature = light_ui_slider(light_picker, 220, 124, 238, row);
@@ -494,15 +474,8 @@ static void lighting_ui_sync_picker(const lx_light_circuit_t *circuit)
     light_syncing = true;
     light_ui_enable(light_mode_buttons[0], allowed && circuit->rgb);
     light_ui_enable(light_mode_buttons[1], allowed && circuit->white);
-    bg_color_if_changed(light_mode_buttons[0], lv_color_hex(!white ? 0x007D7D : light_ui_background()), 0);
-    bg_color_if_changed(light_mode_buttons[1], lv_color_hex(white ? 0x007D7D : light_ui_background()), 0);
-    /* A gombcímke saját fehér színt örökölt a PIN-kezelőből;
-     * a világos, inaktív módnál közvetlenül a címkét kell igazítani. */
-    text_color_if_changed(lv_obj_get_child(light_mode_buttons[0], 0),
-                          lv_color_hex(!white ? 0xFFFFFF : light_ui_foreground()),
-                          0);
-    text_color_if_changed(
-        lv_obj_get_child(light_mode_buttons[1], 0), lv_color_hex(white ? 0xFFFFFF : light_ui_foreground()), 0);
+    lv_obj_set_state(light_mode_buttons[0], LV_STATE_CHECKED, !white);
+    lv_obj_set_state(light_mode_buttons[1], LV_STATE_CHECKED, white);
     light_ui_hidden(light_temperature, !white);
     light_ui_hidden(light_temperature_label, !white);
     light_ui_hidden(light_temperature_caption, !white);
@@ -586,7 +559,12 @@ static void light_ui_bind(light_ui_row_t *row, unsigned index, const lx_light_ci
         lv_obj_set_pos(row->control, 558, 24);
         lv_obj_set_size(row->control, 64, 36);
         lv_obj_set_ext_click_area(row->control, 8);
-        lv_obj_set_style_bg_color(row->control, lv_color_hex(0x008C83), LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(row->control, lv_color_hex(palette.pressed), LV_PART_MAIN);
+        lv_obj_set_style_border_width(row->control, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(row->control, lv_color_hex(palette.surface_muted), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(row->control, lv_color_hex(palette.surface_ink), LV_PART_KNOB);
+        lv_obj_set_style_bg_color(row->control, lv_color_hex(palette.selected), LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(row->control, lv_color_hex(palette.selected_ink), LV_PART_KNOB | LV_STATE_CHECKED);
         lv_obj_remove_flag(row->control, LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         lv_obj_add_event_cb(row->control, light_ui_switch_event, LV_EVENT_VALUE_CHANGED, row);
     }
@@ -743,7 +721,7 @@ void panel_lighting_update(void)
         {
             light_ui_row_t *row = &light_rows[i];
             row->root = panel_box(
-                light_content, 0, 0, LIGHT_ROW_WIDTH, LIGHT_ROW_HEIGHT, light_ui_background(), 16);
+                light_content, 0, 0, LIGHT_ROW_WIDTH, LIGHT_ROW_HEIGHT, palette.surface, 16);
             lv_obj_remove_flag(row->root, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
             lv_obj_add_event_cb(row->root, light_ui_expand_event, LV_EVENT_CLICKED, row);
             row->name = light_ui_label(row->root, "", 16, 27, 286);
@@ -760,10 +738,10 @@ void panel_lighting_update(void)
                        : "");
 }
 
-void panel_lighting_open(lv_obj_t *screen, const char *id, const char *name, unsigned revision, bool night)
+void panel_lighting_open(lv_obj_t *screen, const char *id, const char *name, unsigned revision, const panel_palette_t *colors)
 {
     if (light_overlay) return;
-    home_night = night;
+    palette = *colors;
     unsigned handle = app_loxone_light_open(id, revision);
     if (!handle)
         return;
@@ -773,16 +751,16 @@ void panel_lighting_open(lv_obj_t *screen, const char *id, const char *name, uns
     lv_obj_set_style_bg_opa(light_overlay, 150, 0);
     lv_obj_remove_flag(light_overlay, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(light_overlay, light_ui_close_event, LV_EVENT_CLICKED, NULL);
-    light_panel = panel_box(light_overlay, 10, 20, 700, 680, home_night ? 0x14272D : 0xFBFDF9, 24);
+    light_panel = panel_box(light_overlay, 10, 20, 700, 680, palette.page, 24);
     lv_obj_add_flag(light_overlay, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(light_panel, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(light_panel, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_t *title =
-        panel_label(light_panel, name, 24, 24, &app_font_28, light_ui_foreground());
+        panel_label(light_panel, name, 24, 24, &app_font_28, palette.ink);
     lv_obj_set_width(title, 590);
     lv_obj_set_height(title, lv_font_get_line_height(&app_font_28));
     lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_t *close = panel_button(light_panel, "X", 626, 12, 56, 56);
+    lv_obj_t *close = panel_button(light_panel, "X", 626, 12, 56, 56, &palette);
     lv_obj_add_event_cb(close, light_ui_close_event, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(close, LV_OBJ_FLAG_GESTURE_BUBBLE);
     light_body = lv_obj_create(light_panel);
@@ -801,7 +779,7 @@ void panel_lighting_open(lv_obj_t *screen, const char *id, const char *name, uns
                        24,
                        646,
                        &app_font_20,
-                       light_ui_muted());
+                       palette.muted);
     lv_obj_set_width(light_status, 652);
     lv_label_set_long_mode(light_status, LV_LABEL_LONG_MODE_DOTS);
     panel_lighting_update();

@@ -127,15 +127,15 @@ static void open_tab(unsigned index)
         panel_image(wall, path);
         lv_obj_set_pos(wall, 0, -40);
         lv_obj_t *shade = panel_box(body, 0, 0, 720, 640, 0, 0);
-        lv_obj_set_style_bg_opa(shade, LV_OPA_50, 0);
+        lv_obj_set_style_bg_opa(shade, LV_OPA_60, 0);
     }
-    uint32_t foreground = !image && lv_color_luminance(lv_color_hex(color)) > 148 ? 0x11171C : 0xF4F6F7;
+    panel_palette_t colors = panel_palette_make(color, image);
     const cJSON *blocks = get(t, "blocks");
     if (cJSON_GetArraySize(blocks) == 0) {
-        lv_obj_t *l = panel_label(body, "Ez a lap még üres.", 0, 0, &app_font_28, foreground);
+        lv_obj_t *l = panel_label(body, "Ez a lap még üres.", 0, 0, &app_font_28, colors.ink);
         lv_obj_center(l);
     } else
-        panel_controls_open(body, blocks, foreground, night, generation);
+        panel_controls_open(body, blocks, &colors, generation);
 }
 
 static void wake(void)

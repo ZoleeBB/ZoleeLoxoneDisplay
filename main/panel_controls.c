@@ -59,10 +59,11 @@ static lv_obj_t *container, *view, *primary, *secondary, *feedback, *range, *ran
 static lv_obj_t *items[VISIBLE_ROWS], *choice[LIST_ROWS], *choice_labels[LIST_ROWS], *pager[2];
 static const cJSON *blocks, *block;
 static int selected;
-static uint32_t ink, feedback_tick;
+static uint32_t feedback_tick;
+static panel_palette_t palette;
 static unsigned profile_generation, rev, page, ids[LIST_ROWS], action_count;
 static command_t actions[8];
-static bool is_night, audio_favorites, choice_valid[LIST_ROWS], choice_active[LIST_ROWS], editing;
+static bool audio_favorites, choice_valid[LIST_ROWS], choice_active[LIST_ROWS], editing;
 static lx_audio_favorites_t *favorites;
 static lx_audio_summary_t *audio_summary;
 static bool permitted[8];
@@ -191,8 +192,8 @@ static void slider(int y)
     lv_slider_set_range(range, 0, 1000);
     lv_obj_set_ext_click_area(range, 16);
     lv_obj_add_event_cb(range, range_event, LV_EVENT_ALL, NULL);
-    lv_obj_set_style_bg_color(range, lv_color_hex(0x8CBEB5), LV_PART_INDICATOR);
-    range_label = text_line(view, "—", 567, y - 5, 115, &app_font_24, ink, LV_TEXT_ALIGN_CENTER);
+    panel_control_slider(range, &palette);
+    range_label = text_line(view, "—", 567, y - 5, 115, &app_font_24, palette.ink, LV_TEXT_ALIGN_CENTER);
 }
 
 static void sync_range(bool valid, bool allowed, double min, double max, double current)
@@ -222,7 +223,7 @@ static void act(lv_event_t *event)
     const char *id = str(block, "id");
     esp_err_t result = ESP_ERR_INVALID_STATE;
     if (action == LIGHT_DETAIL) {
-        panel_lighting_open(lv_screen_active(), id, str(block, "name"), rev, is_night);
+        panel_lighting_open(lv_screen_active(), id, str(block, "name"), rev, &palette);
         if (!panel_lighting_is_open())
             status(result);
         return;
@@ -301,9 +302,7 @@ static void act(lv_event_t *event)
 
 static lv_obj_t *button(const char *s, int x, int y, int w, int h, action_t a)
 {
-    lv_obj_t *b = panel_button(view, s, x, y, w, h);
-    lv_obj_set_style_bg_opa(b, LV_OPA_80, 0);
-    lv_obj_set_style_opa(b, LV_OPA_50, LV_STATE_DISABLED);
+    lv_obj_t *b = panel_button(view, s, x, y, w, h, &palette);
     lv_obj_add_event_cb(b, act, LV_EVENT_CLICKED, (void *)(intptr_t)a);
     return b;
 }
@@ -316,14 +315,14 @@ static void command(const char *s, int x, int y, int w, int h, action_t a)
 /* Transparent hit areas keep the setpoint controls quiet over either a photo or a solid color. */
 static void climate_step(int center, action_t direction)
 {
-    lv_obj_t *b = panel_box(view, center - 54, 462, 108, 108, ink, LV_RADIUS_CIRCLE);
+    lv_obj_t *b = panel_box(view, center - 54, 462, 108, 108, palette.ink, LV_RADIUS_CIRCLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_20, LV_STATE_PRESSED);
     lv_obj_set_style_opa(b, LV_OPA_40, LV_STATE_DISABLED);
-    lv_obj_center(panel_box(b, 0, 0, 36, 3, ink, 2));
+    lv_obj_center(panel_box(b, 0, 0, 36, 3, palette.ink, 2));
     if (direction == HIGHER)
-        lv_obj_center(panel_box(b, 0, 0, 3, 36, ink, 2));
+        lv_obj_center(panel_box(b, 0, 0, 3, 36, palette.ink, 2));
     lv_obj_add_event_cb(b, act, LV_EVENT_CLICKED, (void *)(intptr_t)direction);
     actions[action_count++] = (command_t){b, direction};
 }
@@ -344,16 +343,16 @@ static void build_climate(void)
     climate_icon = lv_image_create(mode);
     lv_obj_set_size(climate_icon, 36, 36);
     lv_image_set_inner_align(climate_icon, LV_IMAGE_ALIGN_STRETCH);
-    lv_obj_set_style_image_recolor(climate_icon, lv_color_hex(ink), 0);
+    lv_obj_set_style_image_recolor(climate_icon, lv_color_hex(palette.ink), 0);
     lv_obj_set_style_image_recolor_opa(climate_icon, LV_OPA_COVER, 0);
-    climate_mode = panel_label(mode, "", 0, 0, &app_font_34, ink);
+    climate_mode = panel_label(mode, "", 0, 0, &app_font_34, palette.ink);
 
     lv_obj_t *reading = climate_row(194, 116, 0, LV_FLEX_ALIGN_END);
-    primary = panel_label(reading, "--", 0, 0, &app_font_numbers_132, ink);
-    climate_fraction = panel_label(reading, "", 0, 0, &app_font_numbers_96, ink);
-    lv_obj_set_style_text_opa(climate_fraction, LV_OPA_80, 0);
+    primary = panel_label(reading, "--", 0, 0, &app_font_numbers_132, palette.ink);
+    climate_fraction = panel_label(reading, "", 0, 0, &app_font_numbers_96, palette.ink);
+    lv_obj_set_style_text_color(climate_fraction, lv_color_hex(palette.muted), 0);
 
-    secondary = text_line(view, "", 24, 357, 672, &app_font_28, ink, LV_TEXT_ALIGN_CENTER);
+    secondary = text_line(view, "", 24, 357, 672, &app_font_28, palette.ink, LV_TEXT_ALIGN_CENTER);
     climate_step(266, LOWER);
     climate_step(454, HIGHER);
 }
@@ -390,12 +389,13 @@ static void choose(lv_event_t *ev)
 static void list_widgets(int y, int pitch)
 {
     for (unsigned i = 0; i < LIST_ROWS; ++i) {
-        lv_obj_t *b = panel_box(view, 24, y + (int)i * pitch, 672, pitch - 5, 0x353C40, 11);
+        lv_obj_t *b = panel_box(view, 24, y + (int)i * pitch, 672, pitch - 5, palette.surface, 11);
         lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_bg_opa(b, LV_OPA_80, 0);
+        panel_control_surface(b, &palette);
         lv_obj_add_event_cb(b, choose, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
         choice[i] = b;
-        choice_labels[i] = text_line(b, "", 17, 8, 630, &app_font_24, 0xFFFFFF, LV_TEXT_ALIGN_LEFT);
+        choice_labels[i] = text_line(b, "", 17, 8, 630, &app_font_24, palette.surface_ink, LV_TEXT_ALIGN_LEFT);
+        lv_obj_remove_local_style_prop(choice_labels[i], LV_STYLE_TEXT_COLOR, 0);
         visible(b, false);
     }
     pager[0] = button("Előző", 22, 546, 130, 53, PREV_PAGE);
@@ -412,9 +412,8 @@ static void update_choice(unsigned i, bool valid, const char *text, bool active,
     enabled(choice[i], allowed);
     if (choice_active[i] != active) {
         choice_active[i] = active;
-        lv_obj_set_style_bg_color(choice[i], lv_color_hex(active ? 0x287163 : 0x353C40), 0);
-        lv_obj_set_style_border_width(choice[i], active ? 3 : 0, 0);
-        lv_obj_set_style_border_color(choice[i], lv_color_hex(0xB7E7C4), 0);
+        if (active) lv_obj_add_state(choice[i], LV_STATE_CHECKED);
+        else lv_obj_remove_state(choice[i], LV_STATE_CHECKED);
     }
 }
 
@@ -426,9 +425,9 @@ static void build_list(void)
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     for (int i = 0; i < cJSON_GetArraySize(blocks) && i < VISIBLE_ROWS; ++i) {
         const cJSON *b = cJSON_GetArrayItem(blocks, i);
-        lv_obj_t *row = panel_box(list, 6, i * 88, 678, 80, 0x2A3033, 12);
+        lv_obj_t *row = panel_box(list, 6, i * 88, 678, 80, palette.surface, 12);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_bg_opa(row, LV_OPA_80, 0);
+        panel_control_surface(row, &palette);
         lv_obj_add_event_cb(row, select_event, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         char path[80];
         snprintf(path, sizeof(path), "icons/%s.png", icons[block_kind(b)]);
@@ -437,9 +436,11 @@ static void build_list(void)
         lv_obj_set_size(im, 36, 36);
         lv_image_set_inner_align(im, LV_IMAGE_ALIGN_STRETCH);
         lv_obj_set_pos(im, 17, 21);
-        text_line(row, str(b, "name"), 70, 19, 370, &app_font_28, 0xFFFFFF, LV_TEXT_ALIGN_LEFT);
-        items[i] = text_line(row, "", 446, 22, 176, &app_font_24, 0xD6DDD9, LV_TEXT_ALIGN_RIGHT);
-        text_line(row, ">", 633, 19, 26, &app_font_28, 0xD6DDD9, LV_TEXT_ALIGN_CENTER);
+        lv_obj_set_style_image_recolor(im, lv_color_hex(palette.surface_ink), 0);
+        lv_obj_set_style_image_recolor_opa(im, LV_OPA_COVER, 0);
+        text_line(row, str(b, "name"), 70, 19, 370, &app_font_28, palette.surface_ink, LV_TEXT_ALIGN_LEFT);
+        items[i] = text_line(row, "", 446, 22, 176, &app_font_24, palette.surface_muted, LV_TEXT_ALIGN_RIGHT);
+        text_line(row, ">", 633, 19, 26, &app_font_28, palette.surface_muted, LV_TEXT_ALIGN_CENTER);
     }
 }
 
@@ -458,17 +459,17 @@ static void rebuild(void)
     kind = block_kind(block);
     int title_x = 26;
     if (cJSON_GetArraySize(blocks) > 1) {
-        lv_obj_t *b = panel_button(view, "<", 15, 10, 65, 55);
+        lv_obj_t *b = panel_button(view, "<", 15, 10, 65, 55, &palette);
         lv_obj_add_event_cb(b, select_event, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
         title_x = 93;
     }
     if (kind == IRC && cJSON_GetArraySize(blocks) == 1) {
         lv_obj_t *room =
-            text_line(view, str(block, "name"), 28, 39, 664, &app_font_24, ink, LV_TEXT_ALIGN_CENTER);
-        lv_obj_set_style_text_opa(room, LV_OPA_70, 0);
+            text_line(view, str(block, "name"), 28, 39, 664, &app_font_24, palette.ink, LV_TEXT_ALIGN_CENTER);
+        lv_obj_set_style_text_color(room, lv_color_hex(palette.muted), 0);
     } else {
         text_line(view, str(block, "name"), title_x, 20, kind == LIGHTING ? 460 : 700 - title_x, &app_font_28,
-                  ink, LV_TEXT_ALIGN_LEFT);
+                  palette.ink, LV_TEXT_ALIGN_LEFT);
     }
     if (kind == IRC) {
         build_climate();
@@ -482,13 +483,15 @@ static void rebuild(void)
         lv_obj_set_size(icon, 27, 27);
         lv_image_set_inner_align(icon, LV_IMAGE_ALIGN_STRETCH);
         panel_image(icon, "icons/settings.png");
+        lv_obj_set_style_image_recolor(icon, lv_color_hex(palette.surface_ink), 0);
+        lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
         lv_obj_align(icon, LV_ALIGN_LEFT_MID, 12, 0);
         list_widgets(106, 70);
     } else if (kind == MONITOR) {
         list_widgets(113, 68);
     } else if (kind == AUDIO) {
-        primary = text_line(view, "", 20, 90, 680, &app_font_34, ink, LV_TEXT_ALIGN_CENTER);
-        secondary = text_line(view, "", 20, 150, 680, &app_font_24, ink, LV_TEXT_ALIGN_CENTER);
+        primary = text_line(view, "", 20, 90, 680, &app_font_34, palette.ink, LV_TEXT_ALIGN_CENTER);
+        secondary = text_line(view, "", 20, 150, 680, &app_font_24, palette.ink, LV_TEXT_ALIGN_CENTER);
         command("Előző", 28, 229, 205, 72, MUSIC_PREV);
         command("Lejátszás", 250, 229, 220, 72, MUSIC_PLAY);
         command("Következő", 487, 229, 205, 72, MUSIC_NEXT);
@@ -496,9 +499,9 @@ static void rebuild(void)
         command("Kedvencek", 227, 545, 266, 54, MUSIC_FAVORITES);
         list_widgets(110, 69);
     } else {
-        primary = text_line(view, "—", 20, 185, 680, kind == VALUE ? &app_font_numbers_96 : &app_font_34, ink,
+        primary = text_line(view, "—", 20, 185, 680, kind == VALUE ? &app_font_numbers_96 : &app_font_34, palette.ink,
                             LV_TEXT_ALIGN_CENTER);
-        secondary = text_line(view, "", 26, 315, 668, &app_font_28, ink, LV_TEXT_ALIGN_CENTER);
+        secondary = text_line(view, "", 26, 315, 668, &app_font_28, palette.ink, LV_TEXT_ALIGN_CENTER);
         if (kind == SHADING || kind == GATE || kind == WINDOW) {
             command(kind == SHADING ? "Fel" : "Nyitás", 25, 415, 210, 78, UP);
             command("Stop", 255, 415, 210, 78, STOP);
@@ -516,18 +519,17 @@ static void rebuild(void)
         else if (kind == PULSE)
             command("Aktiválás", 160, 439, 400, 102, TRIGGER);
     }
-    feedback = text_line(view, "", 20, 604, 680, &app_font_20, ink, LV_TEXT_ALIGN_CENTER);
+    feedback = text_line(view, "", 20, 604, 680, &app_font_20, palette.ink, LV_TEXT_ALIGN_CENTER);
     panel_controls_update();
 }
 
-void panel_controls_open(lv_obj_t *parent, const cJSON *cards, uint32_t foreground, bool night,
+void panel_controls_open(lv_obj_t *parent, const cJSON *cards, const panel_palette_t *colors,
                          unsigned panel_generation)
 {
     profile_generation = panel_generation;
     container = parent;
     blocks = cards;
-    ink = foreground;
-    is_night = night;
+    palette = *colors;
     selected = cJSON_GetArraySize(cards) == 1 ? 0 : -1;
     rev = zld_loxone_revision(profile_generation);
     page = 0;
