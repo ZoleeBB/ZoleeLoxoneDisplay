@@ -14,7 +14,7 @@ set(panel "${CMAKE_CURRENT_SOURCE_DIR}/../main")
 file(GLOB fonts "${panel}/fonts/*.c")
 add_executable(panel-preview render.c fixture.c
     "${panel}/app_setup_ui.c" "${panel}/panel_ui.c" "${panel}/panel_ui_style.c"
-    "${panel}/panel_controls.c" "${panel}/panel_lighting.c" "${panel}/panel_energy.c" ${fonts})
+    "${panel}/panel_controls.c" "${panel}/panel_lighting.c" "${panel}/panel_energy.c" "${panel}/panel_energy_summary.c" ${fonts})
 target_compile_definitions(panel-preview PRIVATE APP_TEMPLATE_DESKTOP=1 _DEFAULT_SOURCE)
 target_include_directories(panel-preview PRIVATE . compat ${CJSON_INCLUDE} "${panel}"
     ../components/board/include ../components/loxone/include ../components/update/include)

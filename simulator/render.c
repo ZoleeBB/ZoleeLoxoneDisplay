@@ -96,6 +96,10 @@ int main(int argc,char **argv)
     tap(642,41);assert(fixture_page==3);
     step(1100);
     snapshot("energy");
+    pointer.point=(lv_point_t){490,400};pointer.state=LV_INDEV_STATE_PRESSED;step(100);
+    for (int x=480;x>=220;x-=15) {pointer.point.x=x;step(30);}
+    pointer.state=LV_INDEV_STATE_RELEASED;step(650);
+    snapshot("energy-daily");
     step(9000);
     assert(fixture_brightness==10 && fixture_page==-1);
     snapshot("standby");

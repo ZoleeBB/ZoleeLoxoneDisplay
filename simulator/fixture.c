@@ -3,6 +3,7 @@
 #include "board.h"
 #include "app_setup_wifi.h"
 #include "panel_config.h"
+#include "panel_energy_stats.h"
 #include "panel_intercom_ui.h"
 #include "zld_loxone.h"
 #include "zld_update.h"
@@ -162,3 +163,11 @@ esp_err_t app_loxone_audio_favorite(const char *id,unsigned rev,unsigned v,unsig
 esp_err_t app_loxone_audio_command(const char *id,unsigned rev,lx_audio_action_t a,unsigned v,bool final)
 {(void)id;(void)rev;(void)a;(void)v;(void)final;fixture_calls++;return ESP_OK;}
 void app_loxone_audio_detail_close(void) {}
+
+bool panel_energy_stats_read(unsigned tab,unsigned revision,panel_daily_t *out,bool *live)
+{
+    (void)tab;(void)revision;*live=true;
+    *out=(panel_daily_t){.production=12.4,.consumption=8.9,.imported=2.2,.exported=4.1,
+        .charged=3.8,.discharged=2.1,.pv_home=4.6,.pv_stored=3.5,.bat_home=2.1,.seen=31};
+    return true;
+}

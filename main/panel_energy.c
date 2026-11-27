@@ -1,5 +1,6 @@
 /* A 4B Slave azonos elrendezése és energiaút-modellje, a fülsor alatti négyzetre vetítve. */
 #include "panel_energy.h"
+#include "panel_energy_summary.h"
 #include "panel_ui_style.h"
 #include "app_flow_model.h"
 #include "zld_loxone.h"
@@ -54,11 +55,62 @@ static lv_obj_t *icon(const char *path, int x, int y, int size)
     return obj;
 }
 
+static void text_shadow(lv_event_t *event)
+{
+    /* A betűket rajzoljuk újra 1 pixeles eltolással, nem a felirat dobozát.
+     * A szín a tényleges szövegszínt követi, így a teljesítményértékek
+     * színváltása és a nappali/éjjeli mód sem igényel második feliratot. */
+    lv_obj_t *object = lv_event_get_current_target(event);
+    bool opaque_background = lv_obj_get_style_bg_opa(object, LV_PART_MAIN) != LV_OPA_TRANSP;
+    bool after_main = lv_event_get_code(event) == LV_EVENT_DRAW_MAIN_END;
+    if (opaque_background != after_main)
+        return;
+    lv_draw_label_dsc_t shadow;
+    lv_draw_label_dsc_init(&shadow);
+    shadow.base.layer = lv_event_get_layer(event);
+    lv_obj_init_draw_label_dsc(object, LV_PART_MAIN, &shadow);
+    shadow.text = lv_label_get_text(object);
+    shadow.flag = LV_TEXT_FLAG_EXPAND;
+    lv_area_t area;
+    lv_obj_get_content_coords(object, &area);
+    lv_text_get_size(&shadow.text_size, shadow.text, shadow.font,
+                     shadow.letter_space, shadow.line_space,
+                     lv_area_get_width(&area), shadow.flag);
+    lv_color_t foreground = shadow.color;
+    lv_opa_t foreground_opa = shadow.opa;
+    shadow.color = lv_color_hex(lv_color_luminance(shadow.color) < 130
+                                  ? 0xF4FAFF : 0x001020);
+    shadow.opa = (lv_opa_t)((unsigned)shadow.opa * 85 / 100);
+    area.x1++;
+    area.x2++;
+    area.y1++;
+    area.y2++;
+    lv_draw_label(shadow.base.layer, &shadow, &area);
+    shadow.color = foreground;
+    shadow.opa = foreground_opa;
+    area.y1--;
+    area.y2--;
+    /* Szintetikus félkövér: a betűk még egyszer, 1 képponttal jobbra, a saját
+     * színükkel. Így a névnek és a teljesítményértéknek nem kell külön
+     * félkövér fontot a flashbe tenni, és a szélesség sem változik. */
+    if (lv_event_get_user_data(event))
+        lv_draw_label(shadow.base.layer, &shadow, &area);
+    if (after_main)
+    {
+        /* Saját hátterű diagnosztikai feliratnál a háttér után rajzolunk,
+         * majd visszatesszük a fő betűréteget az árnyék elé. */
+        area.x1--;
+        area.x2--;
+        lv_draw_label(shadow.base.layer, &shadow, &area);
+    }
+}
+
 static lv_obj_t *label(const char *text, int x, int y, int width, const lv_font_t *font)
 {
     lv_obj_t *obj = panel_label(root, text, scaled(x), scaled(y), font, 0x00183D);
     lv_obj_set_width(obj, scaled(width));
     lv_label_set_long_mode(obj, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_add_event_cb(obj, text_shadow, LV_EVENT_DRAW_MAIN_BEGIN, NULL);
     return obj;
 }
 
@@ -109,6 +161,7 @@ void panel_energy_open(lv_obj_t *parent)
     lv_bar_set_range(soc, 0, 100);
     message = label("", 20, 668, 680, &app_font_20);
     lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
+    panel_summary_attach(root);
     last_night = last_weather = -1;
     last_tick = lv_tick_get();
     last_read = last_tick - 500;
@@ -144,6 +197,10 @@ void panel_energy_update(unsigned tab, bool night, const char *clock)
     uint32_t now = lv_tick_get();
     float dt = (now-last_tick)/1000.f;
     last_tick = now;
+    if (panel_summary_visible()) {
+        panel_summary_sync(tab,night);
+        return;
+    }
     if (now-last_read >= 400) {
         last_read = now;
         available = zld_loxone_energy(tab, &values);
