@@ -34,9 +34,11 @@ jobs:
       - name: Check persistence, web editor, update transactions and SD catalog
         run: |
           tests/panel-config/run.sh
+          tests/daily/run.sh
           node --check main/web/admin.js
           python3 -m unittest discover -s tests -p test_update.py -v
           python3 tests/test_visual_assets.py
+          python3 tests/test_docs.py
       - name: Check out the matching LVGL simulator source
         uses: actions/checkout@v4
         with:
