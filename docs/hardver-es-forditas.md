@@ -9,10 +9,10 @@ Mindkét eszköz 720 × 720 képpontos ST7703 MIPI DSI kijelzőt, GT911 érintő
 
 ## A megfelelő bináris kiválasztása
 
-A cikkszám mellett a P4 processzor szilíciumrevíziója is számít. A termékcímke PCB-revíziója és a processzor revíziója külön adat. A USB-UART csatlakozást követően az esptool is kiírja az utóbbit.
+A cikkszám mellett a P4 processzor szilíciumrevíziója is számít. A termékcímke PCB-revíziója és a processzor revíziója külön adat. Az USB-UART csatlakozást követően az esptool is kiírja az utóbbit.
 
 ```sh
-python -m esptool --chip esp32p4 --port COM5 chip-id
+python -m esptool --chip esp32p4 --port COM5 chip_id
 ```
 
 | Szilícium | Profil |
@@ -38,7 +38,7 @@ Minden változathoz külön buildkönyvtárat használj. A firmware a panelbe é
 Az adott profilhoz tartozó artifactot bontsd ki. A `-usb.bin` az indítót, partíciós táblát és alkalmazást tartalmazza. Első telepítéshez a megfelelő változatot a 0x0 címre írd. Az alábbi példa a 31416 cikkszámú v1.x panelé.
 
 ```sh
-python -m esptool --chip esp32p4 --port COM5 write-flash 0x0 ZoleeLoxoneDisplay-31416-rev1-usb.bin
+python -m esptool --chip esp32p4 --port COM5 write_flash 0x0 ZoleeLoxoneDisplay-31416-rev1-usb.bin
 ```
 
 A hozzá tartozó `.zld` tartalmazza az SD-erőforrásokat is. Az eszköz webes frissítési oldalán tudod telepíteni. A verziócímkével kiadott build fájljai a GitHub Releases oldalon is megjelennek.
