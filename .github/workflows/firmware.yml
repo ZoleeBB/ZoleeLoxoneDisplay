@@ -18,7 +18,7 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     name: Regression tests
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +37,19 @@ jobs:
           node --check main/web/admin.js
           python3 -m unittest discover -s tests -p test_update.py -v
           python3 tests/test_visual_assets.py
+      - name: Check out the matching LVGL simulator source
+        uses: actions/checkout@v4
+        with:
+          repository: lvgl/lvgl
+          ref: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
+          path: .test-lvgl
+          persist-credentials: false
+      - name: Test actual LVGL touch paths, brightness and first boot
+        run: |
+          cmake -S simulator -B /tmp/panel-sim -G Ninja -DLVGL_DIR="$GITHUB_WORKSPACE/.test-lvgl"
+          cmake --build /tmp/panel-sim --parallel 4
+          mkdir /tmp/panel-previews
+          /tmp/panel-sim/panel-preview "$GITHUB_WORKSPACE/sdcard" "$GITHUB_WORKSPACE/simulator/fixture.json" /tmp/panel-previews
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
