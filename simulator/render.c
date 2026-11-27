@@ -84,7 +84,7 @@ void assert_awake_tabs(void)
     }
 }
 
-static void check_saver_chrome(const lv_area_t *footer)
+static void check_saver_chrome(const lv_area_t *footer, uint32_t ink)
 {
     /* A Touch-feliratot a normál óra teljes sorainak képpontjaival vetjük össze.
      * A rombusz mindkét alsó éle metszené ezt a területet takarás nélkül. */
@@ -98,30 +98,37 @@ static void check_saver_chrome(const lv_area_t *footer)
     }
     for (int y = footer->y1; y <= footer->y2; ++y) {
         for (int x = footer->x1; x <= footer->x2; ++x) {
-            if (abs(abs(x - 360) + abs(y - 360) - 360) <= 3)
-                assert(reference[y - FOOTER_Y][x] == framebuffer[y * SIDE + x]);
+            if (abs(abs(x - 360) + abs(y - 360) - 360) > 5) continue;
+            /* A betűk színétől függetlenül fekete a korábbi üres hely, a teli tintát
+             * pedig az új árnyalat adja. Az élsimított betűpixelek köztes színűek. */
+            uint32_t previous = reference[y - FOOTER_Y][x] & 0xffffff;
+            uint32_t current = framebuffer[y * SIDE + x] & 0xffffff;
+            if (!previous) assert(!current);
+            if (previous == 0x8B8C8E) assert(current == ink);
         }
     }
-    /* Az egész felső sáv üres a két egypixeles, semleges rombuszélen kívül. */
+    /* A felső sávban kizárólag a rombusz két, élsimított éle világíthat. */
     for (int y = 0; y < 80; ++y) {
         unsigned visible = 0;
         for (int x = 0; x < SIDE; ++x) {
-            uint32_t pixel = framebuffer[y * SIDE + x] & 0xffffff;
-            if (!pixel) continue;
-            assert(abs(abs(x - 360) - y) <= 2);
-            assert((pixel & 255) <= 23 && pixel == (pixel & 255) * 0x010101);
+            if (!(framebuffer[y * SIDE + x] & 0xffffff)) continue;
+            assert(abs(abs(x - 360) - y) <= 4);
             ++visible;
         }
-        assert(visible > 0 && visible <= 8);
+        assert(visible > 0 && visible <= 16);
     }
-    /* A keret minden élét követjük két szemközti vízszintes metszetben. */
+    /* 45 foknál a három fizikai pixel széles vonásnak legalább két teljes
+     * tintapixele és egy simított széle van egy vízszintes metszetben. */
     const int sample_y[] = {180, 540};
     for (unsigned i = 0; i < sizeof(sample_y) / sizeof(*sample_y); ++i) {
         for (int x = 180; x <= 540; x += 360) {
-            uint32_t stroke = 0;
-            for (int dx = -1; dx <= 1; ++dx)
-                stroke |= framebuffer[sample_y[i] * SIDE + x + dx] & 0xffffff;
-            assert(stroke > 0 && stroke <= 0x1f1f1f);
+            unsigned solid = 0, visible = 0;
+            for (int dx = -6; dx <= 6; ++dx) {
+                uint32_t pixel = framebuffer[sample_y[i] * SIDE + x + dx] & 0xffffff;
+                if (pixel == ink) ++solid;
+                if (pixel) ++visible;
+            }
+            assert(solid >= 2 && visible >= 4 && visible <= 7);
         }
     }
     assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0x515356);
@@ -141,7 +148,9 @@ void assert_standby(const char *time_text, bool night)
     lv_obj_get_coords(footer, &area);
     assert(abs(area.x1 + area.x2 + 1 - SIDE) <= 2 && area.y1 >= 620 && area.y2 < SIDE - 10);
 
-    uint32_t expected = night ? 0xA04E4E : 0x8B8C8E;
+    uint32_t day_ink = fixture_touch && fixture_touch_day_ink
+                           ? strtoul(fixture_touch_day_ink + 1, NULL, 16) : 0x8B8C8E;
+    uint32_t expected = night ? 0xA04E4E : day_ink;
     unsigned solid_clock = 0;
     for (int y = 260; y < 460; y++) {
         for (int x = 0; x < SIDE; x++) {
@@ -150,26 +159,28 @@ void assert_standby(const char *time_text, bool night)
     }
     /* Az ismert 07:13 felirat vékony termosztátfonttal nem éri el ezt a területet. */
     assert(solid_clock > (!strcmp(time_text, "07:13") ? 8500u : 1000u));
-    /* Csak az órát színezzük. Az ikonsor a fekete háttéren közel szürke. */
-    for (int i = 0; i < 80 * SIDE; ++i) {
-        int red = (framebuffer[i] >> 16) & 255;
-        int blue = framebuffer[i] & 255;
-        assert(abs(red - blue) < 5);
+    if (!fixture_touch) {
+        for (int i = 0; i < 80 * SIDE; ++i) {
+            int red = (framebuffer[i] >> 16) & 255;
+            int blue = framebuffer[i] & 255;
+            assert(abs(red - blue) < 5);
+        }
     }
-
-    check_saver_chrome(&area);
+    check_saver_chrome(&area, expected);
 
     /* A valódi PNG az átfestés után a két felirattal azonos tintaárnyalatot ad. */
     lv_color_t ink = lv_obj_get_style_text_color(lv_obj_get_child(footer, 0), 0);
     assert(lv_color_eq(ink, lv_obj_get_style_text_color(lv_obj_get_child(footer, 2), 0)));
     uint32_t color = lv_color_to_u32(ink) & 0xffffff;
-    assert(color == 0x8B8C8E);
-    lv_obj_get_coords(mark, &area);
-    unsigned solid = 0;
-    for (int y = area.y1; y <= area.y2; y++)
-        for (int x = area.x1; x <= area.x2; x++)
-            if ((framebuffer[y * SIDE + x] & 0xffffff) == color) solid++;
-    assert(solid > 150);
+    assert(color == (fixture_touch ? expected : 0x8B8C8E));
+    for (int i = 0; i < 3; ++i) {
+        lv_obj_get_coords(lv_obj_get_child(footer, i), &area);
+        unsigned solid = 0;
+        for (int y = area.y1; y <= area.y2; y++)
+            for (int x = area.x1; x <= area.x2; x++)
+                if ((framebuffer[y * SIDE + x] & 0xffffff) == color) solid++;
+        assert(solid > 150);
+    }
 }
 
 void snapshot(const char *name)

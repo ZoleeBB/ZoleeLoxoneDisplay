@@ -246,14 +246,25 @@ void test_touch_saver(void)
     idle();
     snapshot("standby-touch");
     assert_standby("07:13", false);
+    fixture_touch_day_ink = "#A6B8C9";
+    fixture_generation++;
+    step(800);
+    assert_standby("07:13", false);
+    snapshot("standby-touch-custom");
     fixture_time += 15 * 3600;
     fixture_night_value = true;
     step(800);
     assert_standby("22:13", true);
     snapshot("standby-touch-night");
+    fixture_touch_day_ink = "#7CCB9A";
+    fixture_generation++;
+    step(800);
+    assert_standby("22:13", true); /* A nappali árnyalat mentése éjszaka is zárolva és vörösen hagyja a panelt. */
     fixture_time -= 15 * 3600;
     fixture_night_value = false;
     step(800);
+
+    assert_standby("07:13", false);
 
     zones_and_edges();
     groups(150);
@@ -281,6 +292,12 @@ void test_touch_saver(void)
     fixture_touch = false; /* A mentett, kikapcsolt beállítás hagyományos ébresztést ad. */
     fixture_generation++;
     idle();
+    assert_standby("07:13", false);
+    fixture_night_value = true;
+    step(800);
+    assert_standby("07:13", true);
+    fixture_night_value = false;
+    step(800);
     contact(100, 130);
     step(fixture_tap_window + 60);
     quiet();

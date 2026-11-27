@@ -19,6 +19,7 @@ bool fixture_matched = true;
 const char *fixture_profile, *fixture_sd;
 bool fixture_touch, fixture_doorbell;
 unsigned fixture_tap_window = 400;
+const char *fixture_touch_day_ink;
 uint32_t fixture_session = 1;
 fixture_touch_event_t fixture_touch_trace[48];
 unsigned fixture_touch_count, fixture_touch_cancels;
@@ -100,8 +101,10 @@ cJSON *panel_config_snapshot(void)
     fclose(file);
     input[n] = 0;
     cJSON *profile = cJSON_Parse(input);
+    cJSON *touch = cJSON_GetObjectItemCaseSensitive(profile, "touch");
+    if (fixture_touch_day_ink)
+        cJSON_AddStringToObject(touch, "dayTextColor", fixture_touch_day_ink);
     if (fixture_touch) {
-        cJSON *touch = cJSON_GetObjectItemCaseSensitive(profile, "touch");
         cJSON_SetBoolValue(cJSON_GetObjectItemCaseSensitive(touch, "enabled"), true);
         cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(touch, "tapWindowMs"), fixture_tap_window);
     } else if (!fixture_has_touch_section) {

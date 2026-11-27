@@ -20,6 +20,7 @@ A kiinduló állapot a [ZoleeEnergyFlowDisplay 6786e84 kiadási fája](https://g
 | --- | --- |
 | Beállítások és korábbi profilok betöltése | Az új funkció kezdetben kikapcsolt. Mentés és újraindítás után megmarad mind az öt hozzárendelés és a középső koppintások időablaka. |
 | Kezelés az óraképernyőn | A négy sarok és a középső mező elkülönül. Az alsó vonaltól felfelé húzva az előző lap nyílik meg. Egy elrontott húzás sem vezérelhet világítást. |
+| Touch színei | A színválasztó értéke mentés és újraindítás után is megmarad. Nappal az óra, a három képpont széles osztóvonal és az alsó felirat azonos színű. Aktív éjszakai módban mindhárom a rögzített tompa vörössel jelenik meg. Az alsó felirat kitakarja a mögötte futó vonalat. |
 | Miniserver-parancsok | Egy, két és három koppintást is ki kell próbálni. A világítási kép az adott blokk listájából választható. Kapcsolatvesztés vagy profilmódosítás után egy korábbi érintés sem hajtható végre. |
 | Rövid hangvisszajelzés | Már a Wi-Fi-billentyűzeten, majd egy normál lapon és a képernyőkímélőn is minden ujjletétel egy halk kattanást ad. Húzás és nyomva tartás közben nem ismétlődik. A hangot csengetés és aktív beszélgetés alatt is ellenőrizni kell. |
 | Átadás | A nappali és éjszakai Touch-előnézet a firmware szimulátorából készül. Mindkét cikkszám mindkét szilíciumprofilja forduljon, az élő 2C/3C kimeneteket és a kattanás hangerejét fizikai panellel is ellenőrizni kell. |

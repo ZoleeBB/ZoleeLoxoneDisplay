@@ -12,6 +12,7 @@ extern bool fixture_use_night_value, fixture_night_value, fixture_night_valid;
 
 extern bool fixture_touch, fixture_doorbell;
 extern unsigned fixture_tap_window;
+extern const char *fixture_touch_day_ink;
 extern uint32_t fixture_session;
 typedef struct {
     unsigned zone, taps;
