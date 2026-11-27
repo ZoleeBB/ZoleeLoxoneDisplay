@@ -14,6 +14,16 @@ A kiinduló állapot a [ZoleeEnergyFlowDisplay 6786e84 kiadási fája](https://g
 | 8. Kiadás | Összetartozó firmware és SD-csomag, külön első telepítés | Változatlan fájl kihagyása, megszakítás és újrapróbálás, eltérő hardver elutasítása |
 | 9. Átadás | Magyar útmutató, README-banner, forrásprojekt támogatási címei | Dokumentációs hivatkozások, automatikus tesztek, fizikai mérési jegyzőkönyv |
 
+## Ötzónás Touch és érintési hang
+
+| Lépés | Elfogadási próba |
+| --- | --- |
+| Beállítások és korábbi profilok betöltése | Az új funkció kezdetben kikapcsolt. Mentés és újraindítás után megmarad mind az öt hozzárendelés és a középső koppintások időablaka. |
+| Kezelés az óraképernyőn | A négy sarok és a középső mező elkülönül. Az alsó vonaltól felfelé húzva az előző lap nyílik meg. Egy elrontott húzás sem vezérelhet világítást. |
+| Miniserver-parancsok | Egy, két és három koppintást is ki kell próbálni. A világítási kép az adott blokk listájából választható. Kapcsolatvesztés vagy profilmódosítás után egy korábbi érintés sem hajtható végre. |
+| Rövid hangvisszajelzés | Már a Wi-Fi-billentyűzeten, majd egy normál lapon és a képernyőkímélőn is minden ujjletétel egy halk kattanást ad. Húzás és nyomva tartás közben nem ismétlődik. A hangot csengetés és aktív beszélgetés alatt is ellenőrizni kell. |
+| Átadás | A nappali és éjszakai Touch-előnézet a firmware szimulátorából készül. Mindkét cikkszám mindkét szilíciumprofilja forduljon, az élő 2C/3C kimeneteket és a kattanás hangerejét fizikai panellel is ellenőrizni kell. |
+
 ## Készülékes ellenőrzés
 
 Az elfogadási próbákat mindkét cikkszámon rögzíteni kell az adott panel szilíciumrevíziójával és firmware-azonosítójával együtt. A memória összevetési pontjai az üres lap, a világítási részletek, az energiakép, a hívás megnyitása és tíz bontás utáni nyugalmi állapot. Külön mérendő a szabad belső DMA-memória és a legnagyobb összefüggő blokk. A kaputelefonnál ellenőrizendő a választott hang ismétlése, a csengetésből beszélgetésbe váltás és a készüléken hallható hangerő. A képernyőkímélőnél a nappali szürke és az éjszakai vörös óra olvashatóságát mindkét modellen érdemes megnézni a beállított éjszakai fényerőn.
