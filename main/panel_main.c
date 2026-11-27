@@ -97,9 +97,16 @@ void app_main(void)
     }
     if (board_mount_sd() != ESP_OK) {
         boot_message("A működéshez microSD-kártya szükséges. Helyezz be FAT32-re formázott kártyát.");
-        do {
+        bool trial = pending_ota();
+        unsigned attempts = 0;
+        for (;;) {
             vTaskDelay(pdMS_TO_TICKS(3000));
-        } while (board_mount_sd() != ESP_OK);
+            if (board_mount_sd() == ESP_OK) break;
+            if (trial && ++attempts >= 5) {
+                boot_failed("Az új firmware nem éri el az SD-kártyát. Visszaállítás.");
+                return;
+            }
+        }
     }
     if (panel_config_init() != ESP_OK) {
         boot_failed("Az SD-profil nem olvasható. Ellenőrizd a panel.json és panel.json.bak fájlokat, majd indítsd újra a kijelzőt.");
@@ -129,7 +136,7 @@ void app_main(void)
         return;
     }
     if (board_display_lock(1000)) {
-        lv_obj_delete(boot_label);
+        if (boot_label) lv_obj_delete(boot_label);
         boot_label = NULL;
         board_display_unlock();
     }
@@ -137,7 +144,10 @@ void app_main(void)
         boot_failed("A kezelőfelület indítása sikertelen.");
         return;
     }
-    if (pending_ota()) ESP_ERROR_CHECK_WITHOUT_ABORT(esp_ota_mark_app_valid_cancel_rollback());
+    if (pending_ota() && esp_ota_mark_app_valid_cancel_rollback() != ESP_OK) {
+        boot_failed("A sikeres próbaindítás nem menthető. Visszaállítás az előző verzióra.");
+        return;
+    }
 
     uint32_t applied = 0;
     bool intercom = false;
