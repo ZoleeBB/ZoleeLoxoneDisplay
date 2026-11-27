@@ -1,6 +1,16 @@
 {
   "loxone":{"host":"miniserver.local","user":"Kijelző"},
   "display":{"dayBrightness":80,"nightBrightness":10,"saverSeconds":8,"nightMode":"timer","nightStart":"22:00","nightEnd":"06:00"},
+  "touch":{
+    "enabled":false,"tapWindowMs":400,
+    "corners":[
+      {"type":"shading","uuid":"blind","action":"up","sceneId":0},
+      {"type":"audio","uuid":"player","action":"volumeUp","sceneId":0},
+      {"type":"shading","uuid":"blind","action":"down","sceneId":0},
+      {"type":"audio","uuid":"player","action":"volumeDown","sceneId":0}
+    ],
+    "center":{"uuid":"living-light","inputUuid":"central-button"}
+  },
   "tabs":[
     {"kind":"controls","name":"Szobaklíma","icon":"thermostat","background":{"type":"color","value":"#B9CDEA"},"blocks":[{"id":"living-irc","name":"Nappali","type":"irc"}]},
     {"kind":"controls","name":"Világítás","icon":"light","background":{"type":"image","value":"forest-fog"},"blocks":[{"id":"living-light","name":"Világítási képek","type":"lighting"}]},

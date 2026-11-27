@@ -1,6 +1,7 @@
 #include "panel_ui.h"
 #include "app_loxone_wordmark.h"
 #include "fixture.h"
+#include "touch_test.h"
 #include "lvgl.h"
 #include <assert.h>
 #include <stdint.h>
@@ -12,6 +13,7 @@
 #define SIDE 720
 static uint32_t framebuffer[SIDE * SIDE], draw_buffer[SIDE * 64];
 static lv_indev_data_t pointer;
+static lv_indev_t *input;
 static const char *output;
 
 static void draw(lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
@@ -31,12 +33,21 @@ static void read_pointer(lv_indev_t *dev, lv_indev_data_t *out)
     out->state = pointer.state;
 }
 
-static void step(unsigned ms)
+void step(unsigned ms)
 {
-    for (unsigned t = 0; t < ms; t += 10) {
-        lv_tick_inc(10);
+    while (ms) {
+        unsigned increment = ms < 10 ? ms : 10;
+        ms -= increment;
+        lv_tick_inc(increment);
         lv_timer_handler();
     }
+}
+
+void sim_contact(int x, int y, lv_indev_state_t state)
+{
+    pointer.point = (lv_point_t){x, y};
+    pointer.state = state;
+    lv_indev_read(input);
 }
 
 static void tap(int x, int y)
@@ -61,7 +72,7 @@ static bool has_label(lv_obj_t *parent, const char *text)
     return false;
 }
 
-static void assert_standby(const char *time_text, bool night)
+void assert_standby(const char *time_text, bool night)
 {
     lv_obj_t *layer = lv_obj_get_child(lv_screen_active(), -1);
     lv_obj_t *footer = lv_obj_get_child(layer, -1);
@@ -91,6 +102,17 @@ static void assert_standby(const char *time_text, bool night)
         assert(abs(red - blue) < 5);
     }
 
+    /* Nappal és éjjel azonos, halvány osztóvonalak és az alsó húzásjelző. */
+    if (fixture_touch) {
+        assert((framebuffer[180 * SIDE + 159] & 0xffffff) == 0x191b1d);
+        assert((framebuffer[180 * SIDE + 560] & 0xffffff) == 0x191b1d);
+        assert((framebuffer[360 * SIDE + 22] & 0xffffff) == 0x191b1d);
+        assert((framebuffer[360 * SIDE + 698] & 0xffffff) == 0x191b1d);
+        assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0x515356);
+    } else {
+        assert((framebuffer[705 * SIDE + 360] & 0xffffff) == 0);
+    }
+
     /* A valódi PNG az átfestés után a két felirattal azonos tintaárnyalatot ad. */
     lv_color_t ink = lv_obj_get_style_text_color(lv_obj_get_child(footer, 0), 0);
     assert(lv_color_eq(ink, lv_obj_get_style_text_color(lv_obj_get_child(footer, 2), 0)));
@@ -104,7 +126,7 @@ static void assert_standby(const char *time_text, bool night)
     assert(solid > 150);
 }
 
-static void snapshot(const char *name)
+void snapshot(const char *name)
 {
     char path[512];
     snprintf(path, sizeof(path), "%s/%s.ppm", output, name);
@@ -182,7 +204,7 @@ int main(int argc, char **argv)
     lv_display_set_color_format(d, LV_COLOR_FORMAT_XRGB8888);
     lv_display_set_buffers(d, draw_buffer, NULL, sizeof(draw_buffer), LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(d, draw);
-    lv_indev_t *input = lv_indev_create();
+    input = lv_indev_create();
     lv_indev_set_type(input, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(input, read_pointer);
     fixture_complete = false;
@@ -254,6 +276,7 @@ int main(int argc, char **argv)
     assert(fixture_page == -1);
     tap(SIDE / 2, 677);
     assert(fixture_brightness == 80 && fixture_page == 3 && fixture_calls == before);
+    test_touch_saver();
     puts("Rendben: Wi-Fi varázsló, webes átadás, lapváltás, IRC és jelenetparancs, kimenetek, energia, "
          "képernyőkímélő és ébresztés.");
     return 0;

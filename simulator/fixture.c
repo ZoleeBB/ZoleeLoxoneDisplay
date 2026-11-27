@@ -17,6 +17,12 @@ unsigned fixture_generation = 1, fixture_brightness, fixture_calls;
 int fixture_page = -1;
 bool fixture_matched = true;
 const char *fixture_profile, *fixture_sd;
+bool fixture_touch, fixture_doorbell;
+unsigned fixture_tap_window = 400;
+uint32_t fixture_session = 1;
+fixture_touch_event_t fixture_touch_trace[48];
+unsigned fixture_touch_count, fixture_touch_cancels;
+bool fixture_has_touch_section;
 static unsigned active_scene = 2;
 static double target = 22;
 static char selected_ssid[33];
@@ -59,7 +65,7 @@ bool zld_asset_path(const char *name, char *out, size_t n)
 }
 bool panel_intercom_active(void)
 {
-    return false;
+    return fixture_doorbell;
 }
 void panel_intercom_ui_tick(lv_obj_t *screen)
 {
@@ -94,6 +100,14 @@ cJSON *panel_config_snapshot(void)
     fclose(file);
     input[n] = 0;
     cJSON *profile = cJSON_Parse(input);
+    if (fixture_touch) {
+        cJSON *touch = cJSON_GetObjectItemCaseSensitive(profile, "touch");
+        cJSON_SetBoolValue(cJSON_GetObjectItemCaseSensitive(touch, "enabled"), true);
+        cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(touch, "tapWindowMs"), fixture_tap_window);
+    } else if (!fixture_has_touch_section) {
+        /* Régi, Touch szakasz nélkül mentett profil. */
+        cJSON_DeleteItemFromObjectCaseSensitive(profile, "touch");
+    }
     if (fixture_use_night_value) {
         cJSON *settings = cJSON_GetObjectItemCaseSensitive(profile, "display");
         cJSON_SetValuestring(cJSON_GetObjectItemCaseSensitive(settings, "nightMode"), "value");
@@ -101,6 +115,21 @@ cJSON *panel_config_snapshot(void)
     if (!fixture_complete)
         cJSON_DeleteItemFromObject(profile, "tabs");
     return profile;
+}
+uint32_t zld_touch_session(unsigned generation)
+{
+    return fixture_online && fixture_matched && generation == fixture_generation ? fixture_session : 0;
+}
+esp_err_t zld_touch_press(unsigned generation, uint32_t session, unsigned zone, unsigned taps)
+{
+    /* A teszt minden átadási kísérletet rögzít, így egy elutasított kérés sem marad láthatatlan. */
+    if (fixture_touch_count >= sizeof(fixture_touch_trace) / sizeof(fixture_touch_trace[0])) abort();
+    fixture_touch_trace[fixture_touch_count++] = (fixture_touch_event_t){zone, taps, session, lv_tick_get()};
+    return session && session == zld_touch_session(generation) ? ESP_OK : ESP_ERR_INVALID_STATE;
+}
+void zld_touch_cancel(void)
+{
+    fixture_touch_cancels++;
 }
 unsigned zld_loxone_revision(unsigned gen)
 {

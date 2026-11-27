@@ -13,3 +13,5 @@ mkdir -p /tmp/zld-images
 ```
 
 Az előnézetek 720 × 720-as PPM-fájlok. A program ellenőrzi a Wi-Fi jelszómezőt, a webes IP-címet, a termosztátparancsokat, a jelenetválasztást, az RGBW-ablakot, az energiafül húzását, a képernyőkímélő fényerejét és az első érintés kizárólagos ébresztését. A készenléti órán a teszt képpontokból ellenőrzi a színt az időablak váltásakor, a Miniserver-jel megváltozásakor és jelkimaradáskor. Külön ellenőrzi az alsó feliratot és a felső ikonsort. A napi összesítő számítását és SD-visszaállítását a `tests/daily/run.sh` külön teszteli.
+
+A Touch módhoz a program a valódi LVGL-érintési eseményeket adja a firmware-nek. A szimulált Miniserver-határfelület rögzíti az átadott zónát, a koppintások számát, a munkamenetet és az időt. A teszt a határvonalak egymás melletti képpontjait, a 150, 400 és 1000 ms-os időablakot, a nyomva tartást és az alsó sávról indított húzást is ellenőrzi. Profilváltás, hívás, kapcsolatvesztés és feloldás közben a félbehagyott koppintásokat külön vizsgálja. A futás a nappali `standby-touch.ppm` és az éjszakai `standby-touch-night.ppm` képet is kimenti.
