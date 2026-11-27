@@ -33,7 +33,7 @@ A részletes világítási modell egyszerre legfeljebb 64 kört és 128 világí
 
 ## Energiaáramlás és éjszakai mód
 
-Válaszd a lap típusának az **Energiaáramlás** lehetőséget. Az **Értékek összerendelése** mindig az adott fülhöz tartozik. Például a `PowerPV` mezőhöz választhatsz wattban mért teljesítményt, ehhez a szorzó `0.001`, az eltolás `0`. Egy második energiafül ugyanezekhez a mezőkhöz más UUID-ket és átváltást használhat.
+Válaszd a lap típusának az **Energiaáramlás** lehetőséget. Az **Értékek összerendelése** mindig az adott fülhöz tartozik. Például a `PowerPV` mezőhöz választhatsz wattban mért teljesítményt, ehhez a szorzó `0.001`, az eltolás `0`. A négy teljesítménymező felső határa 15 kW. A hibás vagy tartományon kívüli mérés csak a hozzá rendelt mezőt teszi ismeretlenné. Egy második energiafül ugyanezekhez a mezőkhöz más UUID-ket és átváltást használhat.
 
 | Mező | Várt érték |
 | --- | --- |

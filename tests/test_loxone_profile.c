@@ -22,7 +22,7 @@ static void event(uint8_t *out, uint8_t uuid, double value)
 
 int main(void)
 {
-    cJSON *document = cJSON_Parse("{"
+    cJSON *document = cJSON_Parse("{\"revision\":13,"
         "\"loxone\":{\"host\":\"mini.local\",\"user\":\"panel\",\"port\":80},"
         "\"display\":{\"nightUuid\":\"" C "\"},"
         "\"intercom\":{\"enabled\":true,\"uuid\":\"" B "\",\"gateUuid\":\"" C "\"},"
@@ -31,6 +31,7 @@ int main(void)
         "{\"kind\":\"energy\",\"energy\":{\"PowerPV\":{\"uuid\":\"" B "\"}}}]}");
     panel_profile_t *model = malloc(sizeof(*model));
     assert(document && model && panel_profile_read(model, document, "integration-secret", "video-secret"));
+    assert(model->generation == 13);
     assert(!strcmp(model->connection.password,"integration-secret"));
     assert(model->home.intercom.enabled && !strcmp(model->home.intercom.video_password,"video-secret"));
     assert(model->home.page_count == 3 && model->home.card_count == 1);
@@ -48,6 +49,9 @@ int main(void)
     assert(night.seen[6] && night.value[6]==1 && !night.seen[2]);
     assert(!lx_values_update_fields(&first,model->energy[0].fields,false,2,delta,sizeof(delta)-1));
     assert(first.seen[2] && first.value[2]==2.5);
+    event(delta,1,18000);
+    assert(lx_values_update_fields(&first,model->energy[0].fields,false,2,delta,24));
+    assert(!first.seen[2] && first.value[2]==0);
     const cJSON *tabs=cJSON_GetObjectItemCaseSensitive(document,"tabs");
     cJSON *cards=cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(tabs,1),"blocks");
     assert(cJSON_AddItemToArray(cards,cJSON_Duplicate(cJSON_GetArrayItem(cards,0),true)));

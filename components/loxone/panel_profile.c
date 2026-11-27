@@ -60,6 +60,10 @@ bool panel_profile_read(panel_profile_t *out, const cJSON *panel, const char *pa
 {
     if (!out || !cJSON_IsObject(panel)) return false;
     memset(out, 0, sizeof(*out));
+    const cJSON *revision = cJSON_GetObjectItemCaseSensitive(panel, "revision");
+    if (!cJSON_IsNumber(revision) || revision->valueint < 1 || revision->valuedouble != revision->valueint)
+        return false;
+    out->generation = (unsigned)revision->valueint;
     lx_config_t *conn = &out->connection;
     lx_config_defaults(conn);
     const cJSON *loxone = cJSON_GetObjectItemCaseSensitive(panel, "loxone");

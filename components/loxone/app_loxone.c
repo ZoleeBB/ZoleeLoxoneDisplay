@@ -1198,16 +1198,22 @@ esp_err_t zld_loxone_refresh(void)
     return ready ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
-bool zld_loxone_energy(unsigned tab, lx_values_t *out)
+bool zld_loxone_energy_at(unsigned tab, unsigned generation, lx_values_t *out)
 {
     if (!out) return false;
     memset(out, 0, sizeof(*out));
     if (!s_lock || tab >= LX_HOME_MAX_PAGES) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    bool ok = s_profile && s_profile->energy[tab].enabled && lighting_live_locked();
+    bool ok = s_profile && (!generation || s_profile->generation == generation) &&
+              s_profile->energy[tab].enabled && lighting_live_locked();
     if (ok) *out = s_energy[tab];
     xSemaphoreGive(s_lock);
     return ok;
+}
+
+bool zld_loxone_energy(unsigned tab, lx_values_t *out)
+{
+    return zld_loxone_energy_at(tab, 0, out);
 }
 
 bool zld_loxone_night(bool *night)

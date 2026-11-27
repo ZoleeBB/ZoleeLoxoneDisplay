@@ -239,13 +239,31 @@ bool lx_values_update(
 {
     return lx_values_update_fields(v, cfg->map, cfg->energy_flow_disabled, type, data, len);
 }
+/* Preserve the numeric limits of the original 4B energy display. Invalid
+ * telemetry clears just that mapping, leaving other tabs and controls live. */
+static bool display_value(int field, double *value)
+{
+    static const struct { double min, max; bool integer; } limits[LX_FIELD_COUNT] = {
+        {-15,15,false}, {-15,15,false}, {-0.05,15,false}, {-0.05,15,false},
+        {0,100,false}, {1,5,true}, {0,1,true}, {-20,80,false}, {-35,50,false},
+        {0,150,false}, {0,1,true}, {0,1,true}, {0,360,false}, {-90,90,false},
+        {0,1439,true}, {0,1439,true}, {0,1,true}, {0,1,true}, {0,100,false},
+    };
+    if (!isfinite(*value)) return false;
+    if (field == LX_FIELD_HUMIDITY) *value = round(fmin(100, fmax(0, *value)));
+    if (*value < limits[field].min || *value > limits[field].max ||
+        (field == LX_SUN_FIRST && *value == 360) ||
+        (limits[field].integer && *value != floor(*value))) return false;
+    if ((field == 2 || field == 3) && *value < 0) *value = 0;
+    return true;
+}
 bool lx_values_update_fields(lx_values_t *v, const lx_mapping_t fields[LX_FIELD_COUNT],
                              bool energy_disabled, int type, const uint8_t *data, size_t len)
 {
     if (type != 2 && type != 3)
         return true;
     /* Előbb teljes formaellenőrzés: hibás csomag nem írhat részleges mintát. */
-    if (type == 2 && len % 24)
+    if ((!data && len) || (type == 2 && len % 24))
         return false;
     if (type == 3)
         for (size_t p = 0; p < len;)
@@ -253,6 +271,7 @@ bool lx_values_update_fields(lx_values_t *v, const lx_mapping_t fields[LX_FIELD_
             if (len - p < 36)
                 return false;
             uint32_t n = le32(data + p + 32);
+            if (n > len - p - 36) return false;
             size_t padded = ((size_t)n + 3) & ~(size_t)3;
             if (padded > len - p - 36)
                 return false;
@@ -277,17 +296,8 @@ bool lx_values_update_fields(lx_values_t *v, const lx_mapping_t fields[LX_FIELD_
                     double raw;
                     memcpy(&raw, &bits, 8);
                     double value = raw * fields[i].scale + fields[i].offset;
-                    if (!isfinite(value))
-                    {
-                        if (i != LX_FIELD_HUMIDITY && i != LX_FIELD_BATTERY_TEMP)
-                            return false;
-                        /* Hibás opcionális páratartalom csak önmagát rejtse el. */
-                        v->value[i] = 0;
-                        v->seen[i] = false;
-                        continue;
-                    }
-                    v->value[i] = value;
-                    v->seen[i] = true;
+                    v->seen[i] = display_value(i, &value);
+                    v->value[i] = v->seen[i] ? value : 0;
                 }
             }
         p += type == 2 ? 24 : 36 + ((n + 3) & ~(size_t)3);

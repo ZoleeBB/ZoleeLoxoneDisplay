@@ -6,6 +6,7 @@ typedef struct {
 } panel_energy_mapping_t;
 
 typedef struct {
+    unsigned generation;
     lx_config_t connection;
     lx_home_config_t home;
     panel_energy_mapping_t energy[LX_HOME_MAX_PAGES];
