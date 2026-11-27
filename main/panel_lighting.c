@@ -1,7 +1,10 @@
 #include "panel_lighting.h"
 #include "panel_ui_style.h"
 #include "app_loxone_lighting_service.h"
+#ifndef APP_TEMPLATE_DESKTOP
 #include "esp_heap_caps.h"
+#endif
+#include "src/misc/cache/instance/lv_image_cache.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

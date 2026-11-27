@@ -1,0 +1,10 @@
+{
+  "loxone":{"host":"miniserver.local","user":"Kijelző"},
+  "display":{"dayBrightness":80,"nightBrightness":10,"saverSeconds":8,"nightMode":"timer","nightStart":"22:00","nightEnd":"06:00"},
+  "tabs":[
+    {"kind":"controls","name":"Szobaklíma","icon":"thermostat","background":{"type":"color","value":"#B9CDEA"},"blocks":[{"id":"living-irc","name":"Nappali","type":"irc"}]},
+    {"kind":"controls","name":"Világítás","icon":"light","background":{"type":"image","value":"forest-fog"},"blocks":[{"id":"living-light","name":"Világítási képek","type":"lighting"}]},
+    {"kind":"controls","name":"Otthon","icon":"home","background":{"type":"color","value":"#576F66"},"blocks":[{"id":"light","name":"Olvasólámpa","type":"switch"},{"id":"blind","name":"Teraszárnyékolás","type":"shading"},{"id":"room","name":"Nappali hőmérséklete","type":"value","unit":"°C"},{"id":"player","name":"Zene a nappaliban","type":"audio"}]},
+    {"kind":"energy","name":"Energia","icon":"energy"}
+  ]
+}

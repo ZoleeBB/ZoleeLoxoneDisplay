@@ -24,7 +24,7 @@ typedef struct {
 } command_t;
 static const char *const types[] = {"value","pulse","switch","lighting","irc","shading",
     "dimmer","central-lighting","slider","timed-switch","window-monitor","gate","window","audio"};
-static const char *const icons[] = {"sensor","light","light","light","thermostat","blinds",
+static const char *const icons[] = {"meter","switch","switch","light","thermostat","blinds",
     "light","light","settings","clock","home","gate","blinds","audio"};
 static lv_obj_t *container, *view, *primary, *secondary, *feedback, *range, *range_label;
 static lv_obj_t *items[VISIBLE_ROWS], *choice[LIST_ROWS], *choice_labels[LIST_ROWS], *pager[2];
@@ -35,6 +35,8 @@ static unsigned rev, page, ids[LIST_ROWS], action_count;
 static command_t actions[8];
 static bool is_night, audio_favorites, choice_valid[LIST_ROWS], choice_active[LIST_ROWS], editing;
 static lx_audio_favorites_t *favorites;
+static lx_audio_summary_t *audio_summary;
+static bool permitted[8];
 static double low, high;
 static kind_t kind;
 
@@ -84,6 +86,8 @@ static void close_detail(void)
     panel_lighting_close();
     if (audio_favorites) app_loxone_audio_detail_close();
     free(favorites);
+    free(audio_summary);
+    audio_summary=NULL;
     favorites=NULL;
     audio_favorites=false;
     action_count=0;
@@ -189,8 +193,8 @@ static void act(lv_event_t *event)
     }
     if (action==NEXT_PAGE || action==PREV_PAGE) {
         page=action==NEXT_PAGE ? page+1 : page ? page-1 : 0;
-        if (audio_favorites && (page*LIST_ROWS/LX_AUDIO_FAVORITE_PAGE !=
-                               favorites->start/LX_AUDIO_FAVORITE_PAGE))
+        if (audio_favorites && (page*LIST_ROWS < favorites->start ||
+                (page+1)*LIST_ROWS > favorites->start+favorites->count))
             status(app_loxone_audio_favorites_request(id,rev,page*LIST_ROWS));
         panel_controls_update();
         return;
@@ -337,7 +341,7 @@ static void rebuild(void)
              kind==IRC || kind==VALUE ? &app_font_numbers_96 : &app_font_34,ink,LV_TEXT_ALIGN_CENTER);
         secondary=text_line(view,"",26,315,668,&app_font_28,ink,LV_TEXT_ALIGN_CENTER);
         if (kind==IRC) {
-            command("−",174,480,168,92,LOWER);
+            command("-",174,480,168,92,LOWER);
             command("+",378,480,168,92,HIGHER);
         } else if (kind==SHADING || kind==GATE || kind==WINDOW) {
             command(kind==SHADING ? "Fel" : "Nyitás",25,415,210,78,UP);
@@ -384,12 +388,21 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
     }
     if (type==LIGHTING) {
         lx_light_summary_t s={0};
-        if (!app_loxone_light_summary(id,rev,&s)) return false;
+        if (!app_loxone_light_summary(id,rev,&s)) {
+            if (full) {
+                for (unsigned i = 0; i < LIST_ROWS; ++i) update_choice(i,false,"",false,false);
+                visible(pager[0],false);
+                visible(pager[1],false);
+                panel_text(feedback,"Miniserver-adatokra vár…");
+            }
+            return false;
+        }
         const char *m=s.label==LX_LIGHT_ONE_MOOD ? s.name : s.label==LX_LIGHT_OFF ? "Kikapcsolva" :
                       s.label==LX_LIGHT_CUSTOM ? "Egyedi" : "—";
         if (s.label==LX_LIGHT_MANY_MOODS) snprintf(summary,cap,"%u aktív kép",s.active_count);
         else snprintf(summary,cap,"%s",m);
         if (full) {
+            if (!feedback_tick) panel_text(feedback,"");
             bool next=false;
             for (unsigned i=0;i<=LIST_ROWS;++i) {
                 lx_light_mood_t mood={0};
@@ -417,8 +430,10 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
         return s.controllable;
     }
     if (type==AUDIO) {
-        lx_audio_summary_t *s=calloc(1,sizeof(*s));
+        if (!audio_summary) audio_summary=calloc(1,sizeof(*audio_summary));
+        lx_audio_summary_t *s=audio_summary;
         if (!s) return false;
+        memset(s,0,sizeof(*s));
         bool valid=app_loxone_audio_summary(id,rev,s);
         if (valid) {
             snprintf(summary,cap,"%s",*s->track.title ? s->track.title :
@@ -432,6 +447,9 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
             for (unsigned i=0;i<action_count;++i) {
                 action_t a=actions[i].action;
                 visible(actions[i].button,!audio_favorites || a==MUSIC_FAVORITES);
+                lx_audio_action_t actual=a==MUSIC_PREV ? LX_AUDIO_PREVIOUS : a==MUSIC_NEXT ? LX_AUDIO_NEXT :
+                    a==MUSIC_FAVORITES ? LX_AUDIO_FAVORITE : s->track.mode==LX_AUDIO_MODE_PLAY ? LX_AUDIO_PAUSE : LX_AUDIO_PLAY;
+                permitted[i]=a==MUSIC_FAVORITES ? s->native_ready : app_loxone_audio_allowed(id,rev,actual);
                 if (a==MUSIC_PLAY) panel_text(lv_obj_get_child(actions[i].button,0),
                     s->track.mode==LX_AUDIO_MODE_PLAY ? "Szünet" : "Lejátszás");
                 if (a==MUSIC_FAVORITES) panel_text(lv_obj_get_child(actions[i].button,0),
@@ -449,7 +467,6 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
             visible(pager[1],list && (page+1)*LIST_ROWS<favorites->total);
         }
         allowed=s->controllable;
-        free(s);
         return allowed;
     }
     if (type>=DIMMER && type<=WINDOW) {
@@ -460,6 +477,13 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
         if (s.timer_valid && s.timer_running) snprintf(extra,extra_cap,"Hátralévő idő %.0f mp",s.timer_seconds);
         else if (s.reason[0]) snprintf(extra,extra_cap,"%s",s.reason);
         if (full) {
+            for (unsigned i=0;i<action_count;++i) {
+                action_t a=actions[i].action;
+                if (type==WINDOW || type==GATE)
+                    permitted[i]=a==UP ? s.open_allowed : a==DOWN ? s.close_allowed : true;
+                if (type==TIMED && a==ON)
+                    visible(actions[i].button,cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(b,"allowPermanent")));
+            }
             sync_range(ok && s.value_valid && s.range_valid,s.controllable,s.minimum,s.maximum,s.value);
             if (type==MONITOR) {
                 for (unsigned i=0;i<LIST_ROWS;++i) {
@@ -479,7 +503,11 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
     lx_home_value_t v={0};
     bool ok=zld_loxone_card(id,&v,&allowed);
     if (ok && v.valid) {
-        if (type==SWITCH) snprintf(summary,cap,"%s",v.value!=0 ? "Bekapcsolva" : "Kikapcsolva");
+        if (type==SWITCH) {
+            snprintf(summary,cap,"%s",v.value!=0 ? "Bekapcsolva" : "Kikapcsolva");
+            if (full) for (unsigned i=0;i<action_count;++i)
+                permitted[i]=actions[i].action==ON ? v.value==0 : v.value!=0;
+        }
         else {
             snprintf(summary,cap,"%.1f",v.value);
             snprintf(extra,extra_cap,"%s",str(b,"unit"));
@@ -512,9 +540,10 @@ void panel_controls_update(void)
         feedback_tick=0;
         panel_text(feedback,"");
     }
+    for (unsigned i=0;i<action_count;++i) permitted[i]=true;
     bool allowed=describe(block,kind,value,sizeof(value),extra,sizeof(extra),true);
     panel_text(primary,value);
     panel_text(secondary,extra);
     for (unsigned i=0;i<action_count;++i)
-        enabled(actions[i].button,allowed || (audio_favorites && actions[i].action==MUSIC_FAVORITES));
+        enabled(actions[i].button,(allowed && permitted[i]) || (audio_favorites && actions[i].action==MUSIC_FAVORITES));
 }
