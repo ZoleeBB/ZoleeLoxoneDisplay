@@ -119,6 +119,48 @@ static void dispatch(unsigned taps)
     touch_poll();
 }
 
+static void stress_discovery_cache(void)
+{
+    /* Even a full discoverable catalog and more than 512 KiB worth of mood
+     * lists must leave an existing page's raw state slot and budget intact. */
+    memset(&profile, 0, sizeof(profile));
+    profile.home.card_count = 1;
+    profile.home.cards[0].type = LX_HOME_CARD_VALUE;
+    const char *tile_state = "fffffff0-0000-0000-0000000000000000";
+    strcpy(profile.home.cards[0].source.uuid, tile_state);
+    assert(!profile.touch.enabled);
+    s_catalog = cJSON_CreateArray();
+    char id[LX_UUID_LEN];
+    for (unsigned i = 0; i < LX_CATALOG_MAX; ++i) {
+        snprintf(id, sizeof(id), "%08x-0000-0000-0000000000000000", i + 1);
+        cJSON *row = cJSON_CreateObject();
+        cJSON *states = cJSON_AddObjectToObject(row, "touch_states");
+        assert(cJSON_AddStringToObject(states, "moodList", id));
+        assert(cJSON_AddStringToObject(row, "control_uuid", id));
+        assert(cJSON_AddItemToArray(s_catalog, row));
+    }
+    lighting_cache_prepare();
+    assert(s_light_cache.count == LIGHT_CACHE_MAX_STATES);
+    light_cache_entry_t *tile = lighting_cache_find(tile_state);
+    assert(tile && !tile->touch_only);
+    size_t length = LX_LIGHT_TEXT_MAX - 1;
+    char *payload = malloc(length + 1);
+    assert(payload);
+    memset(payload,'x',length); payload[length]=0;
+    for (unsigned i = 0; i < 20; ++i) {
+        snprintf(id, sizeof(id), "%08x-0000-0000-0000000000000000", i + 1);
+        lighting_cache_store(id, false, 0, payload, length);
+    }
+    assert(s_light_cache.touch_text_bytes == TOUCH_CACHE_TEXT_BUDGET);
+    assert(s_light_cache.text_bytes == 0);
+    lighting_cache_store(tile_state, false, 0, "updated", 7);
+    assert(tile->seen && tile->length == 7 && !strcmp(tile->text, "updated"));
+    assert(s_light_cache.text_bytes == 8);
+    free(payload);
+    lighting_cache_clear();
+    cJSON_Delete(s_catalog);
+}
+
 int main(void)
 {
     (void)lighting_cache_replay_block; (void)lighting_cache_replay_irc;
@@ -209,5 +251,6 @@ int main(void)
     assert(!lx_touch_ack_matches("jdev/sps/io/" VI "/pulse","dev/sps/io/" BUTTON "/pulse"));
     assert(!lx_touch_ack_matches("jdev/sps/io/" VI "/pulse","dev/sps/io/" VI "/on"));
     lighting_cache_clear(); cJSON_Delete(s_catalog);
+    stress_discovery_cache();
     puts("Touch commands passed, including card-free scenes, fresh locks, authenticated pulse order and cancellation");
 }
