@@ -44,6 +44,7 @@ static lv_obj_t *draw_boundaries(lv_obj_t *layer)
     lv_obj_t *stroke = lv_line_create(layer);
     lv_line_set_points(stroke, diamond, sizeof(diamond) / sizeof(diamond[0]));
     lv_obj_set_style_line_width(stroke, 3, 0);
+    lv_obj_set_style_line_opa(stroke, (LV_OPA_COVER + 1) / 2, 0);
     lv_obj_remove_flag(stroke, LV_OBJ_FLAG_CLICKABLE);
     panel_box(layer, MID - 52, 704, 104, 5, 0x515356, 3);
     return stroke;
