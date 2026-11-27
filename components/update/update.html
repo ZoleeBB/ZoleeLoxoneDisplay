@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="hu">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frissítés · ZoleeLoxoneDisplay</title>
+<style>
+:root {color-scheme: dark;font:16px/1.5 system-ui,sans-serif;background:#131816;color:#f0f3ed}
+* {box-sizing:border-box} body {margin:0} main {max-width:680px;margin:auto;padding:32px 20px}
+a {color:#b5dk8a} h1 {font-size:clamp(2rem,6vw,3.2rem);line-height:1.06;margin:38px 0 12px}
+h2 {font-size:1.1rem;margin:0 0 8px} section {margin:20px 0;padding:20px;border:1px solid #495649;border-radius:14px;background:#1d2520}
+p {margin:8px 0 14px}.actions {display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+button,input::file-selector-button {font:inherit;border:1px solid #667465;background:#334333;color:#fff;border-radius:8px;padding:9px 12px;cursor:pointer}
+button.primary {background:#b5d998;color:#152514} button:disabled {opacity:.45;cursor:default}
+input {display:block;width:100%;margin:6px 0 12px;color:inherit}
+progress {display:block;width:100%;accent-color:#b5d998;margin:12px 0} #result {overflow-wrap:anywhere}
+</style>
+<main>
+<a href="/">← Beállítások</a>
+<h1>Frissítés</h1>
+<p id="device">Kijelző lekérdezése…</p>
+<section>
+<h2>Képek a kijelzőre</h2>
+<p>A kijelző közvetlenül a saját firmware-verziójához tartozó hiányzó képeket tölti le az SD-kártyára. Ehhez internetkapcsolat szükséges.</p>
+<button class="primary" id="download" disabled>Képcsomag letöltése az SD-kártyára</button>
+<p id="remoteStatus" role="status" aria-live="polite"></p>
+</section>
+<section>
+<h2>Telepítőcsomag</h2>
+<p>A firmware és a hozzá tartozó SD-fájlok egyetlen .zld csomagban érhetők el. Első üzembe helyezéskor használd a kijelzőre írt firmware-rel együtt kiadott csomagot.</p>
+<a id="release" hidden>A legfrissebb .zld csomag letöltése számítógépre ↗</a>
+</section>
+<section>
+<h2>SD-kártya és firmware</h2>
+<label for="file">Helyi .zld csomag</label><input id="file" type="file" accept=".zld">
+<p id="summary"></p>
+<div class="actions">
+<button id="seed" disabled>Képcsomag telepítése</button>
+<button class="primary" id="flash" disabled>Firmware és képek frissítése</button>
+</div>
+<progress id="progress" hidden></progress>
+<p id="result" role="status" aria-live="polite"></p>
+</section>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const decoder = new TextDecoder('utf-8', {fatal:true});
+let device, pack, busy = false, polling;
+const say = message => { $('result').textContent = message };
+const read = async (file, start, end) => decoder.decode(await file.slice(start, end).arrayBuffer());
+function buttons() {
+  const locked = busy || !device || device.cloudState === 1;
+  $('download').disabled = locked || !device.remote;
+  $('file').disabled = locked;
+  $('seed').disabled = locked || !pack || pack.generation !== device.generation;
+  $('flash').disabled = locked || !pack;
+}
+async function loadInfo() {
+  const response = await fetch('/update/info', {cache:'no-store'});
+  if (!response.ok) throw Error('Az eszköz adatai nem érhetők el.');
+  device = await response.json();
+  $('device').textContent = 'Waveshare ' + device.sku + ' · ' + device.silicon + ' · ' +
+    (device.ready ? 'A képcsomag telepítve' : 'A képcsomag telepítésre vagy javításra vár');
+  const link = $('release');
+  link.href = 'https://github.com/ZoleeBB/ZoleeLoxoneDisplay/releases/latest/download/ZoleeLoxoneDisplay-' +
+    device.sku + '-' + device.silicon + '.zld';
+  link.hidden = false;
+  const status = $('remoteStatus');
+  window.clearTimeout(polling);
+  if (device.cloudState === 1) {
+    status.textContent = 'A kártya előkészítése folyamatban · ' + device.position + '/' + device.count;
+    polling = window.setTimeout(() => loadInfo().catch(e => { status.textContent = e.message; }), 1500);
+  } else if (device.cloudState === 2) status.textContent = 'A kijelző képcsomagja használatra kész.';
+  else if (device.cloudState === 3) status.textContent =
+    'A letöltés megszakadt (' + device.position + '/' + device.count +
+    '). Próbáld újra, vagy válaszd a helyi .zld csomagot.';
+  else if (!device.remote) status.textContent = 'Ehhez a buildhez válaszd a helyi .zld csomagot.';
+  buttons();
+}
+async function openPack(file, target) {
+  if (!file || file.size < 12 || await read(file, 0, 8) !== 'ZLDPAK1\n') throw Error('Ismeretlen csomagformátum.');
+  const n = new DataView(await file.slice(8,12).arrayBuffer()).getUint32(0,true);
+  if (n < 2 || n > 4096) throw Error('Hibás csomagfejléc.');
+  const h = JSON.parse(await read(file, 12, 12+n));
+  if (h.format !== 1 || h.sku !== target.sku || h.silicon !== target.silicon)
+    throw Error('A csomag másik hardverváltozathoz készült.');
+  const sha = /^[a-f0-9]{64}$/;
+  if (!Number.isInteger(h.manifestSize) || h.manifestSize <= 0 || h.manifestSize > 524288 ||
+      !Number.isInteger(h.firmwareSize) || h.firmwareSize <= 0 || h.firmwareSize > 12582912 ||
+      !sha.test(h.generation) || !sha.test(h.firmwareSha)) throw Error('Érvénytelen csomagméret vagy ellenőrzőösszeg.');
+  let offset = 12 + n + h.manifestSize;
+  const manifest = file.slice(12+n, offset);
+  const raw = decoder.decode(await manifest.arrayBuffer());
+  if (!raw.endsWith('\n')) throw Error('Hiányos képjegyzék.');
+  const lines = raw.slice(0,-1).split('\n');
+  if (!lines.length || lines.length > 2048) throw Error('Hibás fájlszám.');
+  const files = lines.map(line => {
+    const fields = /^([0-9a-f]{64}) ([1-9]\d{0,7}) ([\w./-]{1,159})$/.exec(line);
+    if (!fields || Number(fields[2]) > 33554432) throw Error('Hibás fájlbejegyzés.');
+    const start = offset;
+    offset += Number(fields[2]);
+    return {name:fields[3], blob:file.slice(start, offset)};
+  });
+  if (offset+h.firmwareSize !== file.size) throw Error('A csomag mérete eltér a jegyzéktől.');
+  return {...h, manifest, files, firmware:file.slice(offset)};
+}
+$('file').onchange = async () => {
+  const selected = $('file').files[0];
+  pack = null; $('summary').textContent = ''; say(''); buttons();
+  if (!selected) return;
+  try {
+    const opened = await openPack(selected, device);
+    if ($('file').files[0] !== selected) return;
+    pack = opened;
+    $('summary').textContent = pack.files.length + ' SD-fájl · ' +
+      (pack.firmwareSize/1048576).toFixed(1) + ' MiB firmware' +
+      (pack.generation === device.generation ? '' : ' · A képcsomaghoz firmware-frissítés szükséges.');
+  } catch (e) { say(e.message); }
+  buttons();
+};
+async function post(path, body, headers = {}) {
+  const response = await fetch('/update/' + path, {method:'POST', body, headers:{
+    'X-Panel-Request':'1', 'X-Pack-Manifest':pack.generation, ...headers
+  }});
+  const message = await response.text();
+  if (!response.ok) throw Error(message || 'A telepítés sikertelen.');
+  return message;
+}
+async function install(flash) {
+  if (busy || !pack) return;
+  if (flash && !window.confirm('Frissíted a kijelző firmware-ét és képeit? A telepítés végén a kijelző újraindul.')) return;
+  busy = true; buttons();
+  const progress = $('progress');
+  progress.hidden = false; progress.removeAttribute('value');
+  try {
+    say('Az SD-kártya ellenőrzése…');
+    const missing = (await post('prepare', pack.manifest, {'X-Pack-Target':device.sku+'-'+device.silicon})).trim();
+    const indexes = missing ? missing.split('\n') : [];
+    progress.max = indexes.length+1; progress.value = 0;
+    for (const id of indexes) {
+      const entry = pack.files[id];
+      if (!/^\d+$/.test(id) || !entry) throw Error('Érvénytelen válasz a kijelzőtől.');
+      say('Kép feltöltése (' + (progress.value+1) + '/' + indexes.length + ') · ' + entry.name);
+      await post('asset', entry.blob, {'X-Pack-Index':id});
+      ++progress.value;
+    }
+    say(flash ? 'A képek végellenőrzése és a firmware írása…' : 'A képcsomag végellenőrzése…');
+    if (flash) {
+      await post('firmware', pack.firmware, {'X-Firmware-Sha256':pack.firmwareSha});
+      say('A frissítés elkészült. A kijelző újraindul.');
+    } else {
+      await post('seed', '');
+      await loadInfo();
+      say('A képcsomag használatra kész. Feltöltött fájlok száma: ' + indexes.length + '.');
+    }
+    progress.value = progress.max;
+  } catch (e) { say(e.message + ' A telepítés ugyanazzal a csomaggal folytatható.'); }
+  finally { busy = false; buttons(); }
+}
+$('download').onclick = async () => {
+  if (busy) return;
+  busy = true; buttons();
+  try {
+    const response = await fetch('/update/download', {method:'POST', headers:{'X-Panel-Request':'1'}});
+    if (!response.ok) throw Error(await response.text());
+    await loadInfo();
+  } catch (e) { $('remoteStatus').textContent = e.message; }
+  finally { busy = false; buttons(); }
+};
+$('seed').onclick = () => install(false);
+$('flash').onclick = () => install(true);
+buttons();
+loadInfo().catch(e => say(e.message));
+</script>
+</html>

@@ -1,0 +1,113 @@
+name: Firmware and SD update
+
+on:
+  push:
+    branches: [INIT, main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    name: Regression tests
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install host test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcjson-dev libmbedtls-dev libssl-dev zlib1g-dev
+      - name: Exercise Loxone controls and intercom protocol
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -I/usr/include/cjson -Icomponents/loxone/include -Icomponents/loxone tests/test_loxone_profile.c components/loxone/panel_profile.c components/loxone/app_loxone_model.c -lcjson -lm -o /tmp/test-profile
+          /tmp/test-profile
+          cc -std=gnu11 -Icomponents/door_media/include tests/test_intercom_audio_protocol.c components/door_media/app_intercom_audio_protocol.c -lm -o /tmp/test-intercom
+          /tmp/test-intercom
+          tests/door-audio/run.sh
+          tests/touch-commands/run.sh
+      - name: Check persistence, web editor, update transactions and SD catalog
+        run: |
+          tests/panel-config/run.sh
+          tests/daily/run.sh
+          cc -std=c11 -Wall -Wextra -Werror -Imain tests/test_panel_palette.c main/panel_palette.c -lm -o /tmp/test-panel-palette
+          /tmp/test-panel-palette
+          node --check main/web/admin.js
+          python3 -m unittest discover -s tests -p "test_*.py" -v
+      - name: Exercise the Touch settings with desktop and mobile Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/touch-browser" --ignore-scripts --no-audit --no-fund --no-package-lock playwright@1.56.1
+          NODE_PATH="$RUNNER_TEMP/touch-browser/node_modules" CHROME_PATH="$(command -v google-chrome)" node tests/panel-config/touch-browser.cjs
+      - name: Check out the matching LVGL simulator source
+        uses: actions/checkout@v4
+        with:
+          repository: lvgl/lvgl
+          ref: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
+          path: .test-lvgl
+          persist-credentials: false
+      - name: Test actual LVGL touch paths, brightness and first boot
+        run: |
+          cmake -S simulator -B /tmp/panel-sim -G Ninja -DLVGL_DIR="$GITHUB_WORKSPACE/.test-lvgl"
+          cmake --build /tmp/panel-sim --parallel 4
+          mkdir /tmp/panel-previews
+          /tmp/panel-sim/panel-preview "$GITHUB_WORKSPACE/sdcard" "$GITHUB_WORKSPACE/simulator/fixture.json" /tmp/panel-previews
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        sku: [31416, 31570]
+        silicon: [rev1, rev3]
+    name: Waveshare ${{ matrix.sku }} · P4 ${{ matrix.silicon }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile, report size and merge USB image
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.4
+          target: esp32p4
+          command: idf.py -DPANEL_SKU=${{ matrix.sku }} -DPANEL_SILICON=${{ matrix.silicon }} build size merge-bin
+      - name: Package mandatory differential SD assets and matching firmware
+        env:
+          SKU: ${{ matrix.sku }}
+          SILICON: ${{ matrix.silicon }}
+        run: |
+          mkdir -p dist
+          base="dist/ZoleeLoxoneDisplay-${SKU}-${SILICON}"
+          cp build/merged-binary.bin "${base}-usb.bin"
+          python3 tools/package_update.py --sku "$SKU" --silicon "$SILICON" --firmware build/zolee_loxone_display.bin --output "${base}.zld"
+          (cd dist && sha256sum *.bin *.zld > "ZoleeLoxoneDisplay-${SKU}-${SILICON}-SHA256SUMS.txt")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZoleeLoxoneDisplay-${{ matrix.sku }}-${{ matrix.silicon }}
+          path: dist/
+          if-no-files-found: error
+  release:
+    name: Publish tagged binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [checks, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: ZoleeLoxoneDisplay-*
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes dist/*

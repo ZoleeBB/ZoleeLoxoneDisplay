@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 3.16)
+project(panel_preview LANGUAGES C CXX ASM)
+set(LVGL_DIR "" CACHE PATH "A v9.5.0 LVGL forráskönyvtára")
+if(NOT EXISTS "${LVGL_DIR}/lvgl.h")
+    message(FATAL_ERROR "Add meg a -DLVGL_DIR=/elérési/út/lvgl kapcsolót")
+endif()
+set(LV_BUILD_CONF_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "" FORCE)
+set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
+set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+add_subdirectory("${LVGL_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/lvgl")
+find_path(CJSON_INCLUDE cJSON.h PATH_SUFFIXES cjson REQUIRED)
+find_library(CJSON_LIB cjson REQUIRED)
+set(panel "${CMAKE_CURRENT_SOURCE_DIR}/../main")
+file(GLOB fonts "${panel}/fonts/*.c")
+add_executable(panel-preview render.c fixture.c test_touch.c
+    "${panel}/app_loxone_wordmark.c" "${panel}/app_setup_ui.c" "${panel}/panel_ui.c" "${panel}/panel_touch_ui.c" "${panel}/panel_ui_style.c" "${panel}/panel_palette.c"
+    "${panel}/panel_controls.c" "${panel}/panel_lighting.c" "${panel}/panel_energy.c" "${panel}/panel_energy_summary.c" ${fonts})
+target_compile_definitions(panel-preview PRIVATE APP_TEMPLATE_DESKTOP=1 _DEFAULT_SOURCE)
+target_include_directories(panel-preview PRIVATE . compat ${CJSON_INCLUDE} "${panel}"
+    ../components/board/include ../components/loxone/include ../components/update/include)
+target_compile_options(panel-preview PRIVATE -Wall -Wextra -Werror=implicit-function-declaration)
+target_link_options(panel-preview PRIVATE "-Wl,--wrap=time")
+target_link_libraries(panel-preview PRIVATE lvgl ${CJSON_LIB} m)

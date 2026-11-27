@@ -1,0 +1,635 @@
+'use strict';
+const $ = id => document.getElementById(id);
+const types = {
+  value:'Mért érték', pulse:'Nyomógomb', switch:'Kapcsoló', lighting:'Világításvezérlés',
+  irc:'Termosztát', shading:'Árnyékolás', dimmer:'Dimmer', 'central-lighting':'Központi világítás',
+  slider:'Analóg értékállító', 'timed-switch':'Időzített kapcsoló', 'window-monitor':'Ajtó–ablak összesítő',
+  gate:'Kapu / garázsajtó', window:'Motoros ablak', audio:'Audioserver'
+};
+function eligible(type,row){
+  if(!row.control_uuid || row.secured || (row.action_uuid==='' && type!=='window-monitor')) return false;
+  if(type==='pulse') return ['Switch','Pushbutton','TimedSwitch'].includes(row.type);
+  if(type==='switch') return row.type==='Switch';
+  if(['lighting','irc','shading'].includes(type)) return row[type+'_blocked']===false;
+  return row.controls_type===type && row.controls_blocked===false;
+}
+const energyFields = {
+  PowerGrid:'Hálózati teljesítmény',PowerBat:'Akkumulátorteljesítmény',PowerPV:'Napelem teljesítménye',
+  PowerFull:'Ház fogyasztása',SocBat:'Akkumulátor töltöttsége',Status:'Rendszerállapot',
+  BatteryTemperature:'Akkumulátor-hőmérséklet',Temperature:'Külső hőmérséklet',WindSpeed:'Szélsebesség',
+  HasSunRadiation:'Napsütés',HasPrecipitation:'Csapadék',SunAzimuth:'Nap azimutja',SunAltitude:'Nap magassága',
+  Sunrise:'Napkelte',Sunset:'Napnyugta',RelativeHumidity:'Páratartalom'
+};
+const app = {profile:null,assets:{backgrounds:[],icons:[]},controls:[],section:'tabs',tab:0,
+  dirty:false,busy:false,connected:false,connectionStatus:'',secrets:{}};
+const editor=$('editor'), save=$('save');
+function el(tag,cls,content){
+  const node=document.createElement(tag);
+  if(cls) node.className=cls;
+  if(content!==undefined) node.textContent=content;
+  return node;
+}
+function button(caption,action,cls){
+  const b=el('button',cls,caption); b.type='button'; b.onclick=action; return b;
+}
+function say(msg,error=false){
+  $('status').textContent=msg; $('status').toggleAttribute('data-error',error);
+}
+function changed(){
+  app.dirty=true; save.disabled=app.busy;
+  say('Nem mentett módosítások.');
+}
+function refresh(){changed(); render();}
+function field(label,control){
+  const wrap=el('label','field'); wrap.append(el('span','caption',label),control); return wrap;
+}
+function textBox(o,key,type='text',attrs={},after){
+  const i=el('input'); i.type=type; i.value=o[key]??'';
+  for(const [k,v] of Object.entries(attrs)) i.setAttribute(k,v);
+  i.oninput=()=>{o[key]=type==='number'?(i.value===''?0:Number(i.value)):i.value; changed(); if(after) after(o[key]);};
+  return i;
+}
+function select(o,key,options,update){
+  const s=el('select');
+  for(const [value,label] of Object.entries(options)){const opt=el('option','',label); opt.value=value; s.append(opt);}
+  s.value=o[key];
+  s.onchange=()=>{o[key]=s.value; changed(); if(update) update(s.value);}; return s;
+}
+function check(label,o,key,update){
+  const i=el('input'); i.type='checkbox'; i.checked=o[key];
+  i.onchange=()=>{o[key]=i.checked; changed(); if(update) update(i.checked);};
+  const l=el('label','check'); l.append(i,el('span','',label)); return l;
+}
+function panel(title,actions){
+  const p=el('section','panel'),head=el('div','sectionhead');
+  head.append(el('h2','',title)); if(actions) head.append(actions);
+  p.append(head); editor.append(p); return p;
+}
+function grid(parent){const g=el('div','grid'); parent.append(g); return g;}
+function input(parent,label,o,key,type,attrs,after){
+  const i=textBox(o,key,type,attrs,after); parent.append(field(label,i)); return i;
+}
+function secret(g,label,key){
+  return input(g,label,app.secrets,key,'password',{autocomplete:'new-password',maxlength:127,placeholder:'Üresen a mentett jelszó marad'});
+}
+function rowLabel(r,withState=true){
+  return [r.room,r.name,withState?r.state:''].filter(Boolean).join(' · ');
+}
+let lists=new Map();
+function mappingInput(o,key,rows,idKey,onSelected){
+  const i=el('input');
+  /* All energy mappings and sensor rows on the same page share one state list. */
+  const listKey=idKey==='uuid'?'states':rows.map(r=>r.control_uuid).join(',');
+  if(!lists.has(listKey)){
+    const list=el('datalist');list.id='uuid-'+lists.size;
+    const seen=new Set();
+    for(const r of rows){
+      const value=r[idKey]; if(!value || seen.has(value)) continue;
+      const opt=el('option'); opt.value=value; opt.label=rowLabel(r,idKey==='uuid'); list.append(opt); seen.add(value);
+    }
+    editor.append(list);lists.set(listKey,list.id);
+  }
+  i.setAttribute('list',lists.get(listKey));i.placeholder='Válassz a listából vagy írj be UUID-t';
+  i.spellcheck=false;i.autocomplete='off';i.value=o[key]||'';
+  i.oninput=()=>{
+    const value=i.value.trim().toLowerCase();o[key]=value;changed();
+    if(onSelected)onSelected(rows.find(r=>r[idKey]===value));
+  };
+  return i;
+}
+function assetURL(kind,id){return '/assets/'+(kind==='icons'?'icons/':'thumbs/')+encodeURIComponent(id)+(kind==='icons'?'.png':'.jpg');}
+function image(kind,id){
+  const img=el('img'); img.alt=''; img.loading='lazy'; img.src=assetURL(kind,id); return img;
+}
+function assetButton(kind,id,onSelect){
+  const asset=app.assets[kind].find(item=>item.id===id);
+  const b=button(asset?.name||id||'Választás',()=>openPicker(kind,id,onSelect),'pickbtn');
+  if(asset) b.prepend(image(kind,id)); return b;
+}
+function openPicker(kind,selected,onSelect){
+  const dialog=$('picker'); $('pickTitle').textContent=kind==='icons'?'Fülikon kiválasztása':'Háttérkép kiválasztása';
+  const filter=$('filter');filter.value='';
+  const categories=$('pickCategory');
+  categories.hidden=kind!=='backgrounds';
+  let category='';
+  for(const b of categories.querySelectorAll('button')){
+    b.setAttribute('aria-pressed',String(b.dataset.category===category));
+    b.onclick=()=>{
+      category=b.dataset.category;
+      for(const item of categories.querySelectorAll('button'))
+        item.setAttribute('aria-pressed',String(item===b));
+      show();
+    };
+  }
+  function show(){
+    const box=$('choices'); box.replaceChildren();
+    const query=filter.value.trim().toLocaleLowerCase('hu');
+    for(const a of app.assets[kind]){
+      if(category && a.category!==category) continue;
+      if(!(a.name+' '+a.id).toLocaleLowerCase('hu').includes(query)) continue;
+      const b=button('',()=>{dialog.close(); onSelect(a.id); refresh();},'preview '+(kind==='icons'?'icon':''));
+      b.setAttribute('aria-pressed',a.id===selected); b.append(image(kind,a.id),el('span','',a.name)); box.append(b);
+    }
+    if(!box.childElementCount){
+      const msg=el('p','hint span',app.assets[kind].length?'Nincs találat.':'Az induló képcsomagot a Frissítés oldalon telepítheted.');
+      if(!app.assets[kind].length){const link=el('a','','Frissítés megnyitása');link.href='/update';msg.append(' ',link);}
+      box.append(msg);
+    }
+  }
+  filter.oninput=show;show();dialog.showModal();filter.focus();
+}
+$('pickClose').onclick=()=>$('picker').close();
+function moveItem(items,at,to){if(to<0||to>=items.length)return;const [v]=items.splice(at,1);items.splice(to,0,v);}
+function itemTools(items,at,removeMessage,moved,removed){
+  const wrap=el('div','tools');
+  const up=button('↑',()=>{moveItem(items,at,at-1); if(moved)moved(at-1); refresh();});
+  const down=button('↓',()=>{moveItem(items,at,at+1); if(moved)moved(at+1); refresh();});
+  up.setAttribute('aria-label','Mozgatás előre'); down.setAttribute('aria-label','Mozgatás hátra');
+  up.disabled=at===0;down.disabled=at===items.length-1;
+  wrap.append(up,down,button('Törlés',()=>{if(confirm(removeMessage)){items.splice(at,1);if(removed)removed();refresh();}},'danger'));
+  return wrap;
+}
+function nextId(){return 'b-'+Array.from(crypto.getRandomValues(new Uint8Array(8)),x=>x.toString(16).padStart(2,'0')).join('');}
+function renderBlock(parent,tab,b,idx){
+  const box=el('section','block'),head=el('div','row');
+  head.append(el('h3','',b.name||types[b.type]),itemTools(tab.blocks,idx,'Törlöd ezt az elemet?')); box.append(head);
+  const g=grid(box);
+  g.append(field('Funkció',select(b,'type',types,()=>{b.uuid='';b.stateUuid='';delete b.allowPermanent;delete b.decimals;delete b.scale;delete b.offset;
+    if(b.type==='timed-switch') b.allowPermanent=true;render();})));
+  const name=input(g,'Elem neve',b,'name','text',{maxlength:80});
+  const controls=app.controls.filter(r=>eligible(b.type,r));
+  if(b.type!=='value'){
+    g.append(field('Vezérlőblokk',mappingInput(b,'uuid',controls,'control_uuid',r=>{
+      if(!r) return;
+      if(!b.name || b.name==='Új elem'){b.name=r.name; name.value=b.name; head.firstChild.textContent=b.name;}
+      const state=app.controls.find(x=>x.control_uuid===r.control_uuid && x.state==='active');
+      if(state && b.type==='switch'){b.stateUuid=state.uuid; const fb=box.querySelector('[data-feedback] input');if(fb)fb.value=state.uuid;}
+    })));
+  }
+  if(['switch','pulse','value'].includes(b.type)){
+    const state=field(b.type==='value'?'Megjelenített állapot':'Visszajelző állapot',mappingInput(b,'stateUuid',app.controls,'uuid',r=>{
+      if(r && (!b.name||b.name==='Új elem')) {b.name=r.name;name.value=b.name;head.firstChild.textContent=b.name;}
+    })); state.dataset.feedback='';g.append(state);
+  }
+  if(b.type==='value') {
+    b.decimals??=1;b.scale??=1;b.offset??=0;
+    input(g,'Mértékegység',b,'unit','text',{maxlength:16});
+    input(g,'Tizedesjegyek',b,'decimals','number',{min:0,max:3});
+    input(g,'Szorzó',b,'scale','number',{step:'any',min:-1e6,max:1e6});
+    input(g,'Eltolás',b,'offset','number',{step:'any',min:-1e6,max:1e6});
+  } else if(b.type==='timed-switch'){
+    g.append(check('Tartós bekapcsolás engedélyezése',b,'allowPermanent'));
+  }
+  parent.append(box);
+}
+function renderEnergy(p,tab){
+  const s=el('section','block');s.append(el('h3','','Értékek összerendelése'),
+    el('p','hint','A hálózat, akkumulátor, napelem és házfogyasztás értékeit kW-ra skálázd. A szorzó és eltolás a Miniserver nyers értékére vonatkozik.'));
+  for(const [k,label] of Object.entries(energyFields)){
+    const row=el('div','maprow'), m=tab.energy[k]||{uuid:'',scale:1,offset:0};
+    const sync=()=>{if(m.uuid) tab.energy[k]=m;else delete tab.energy[k];};
+    row.append(field(label,mappingInput(m,'uuid',app.controls,'uuid',sync)));
+    input(row,'Szorzó',m,'scale','number',{step:'any',min:-1e6,max:1e6},sync);
+    input(row,'Eltolás',m,'offset','number',{step:'any',min:-1e6,max:1e6},sync);s.append(row);
+  }
+  p.append(s);
+}
+function renderTabs(){
+  const tabs=app.profile.tabs;
+  const add=button('+ Lapfül',()=>{
+    tabs.push({kind:'controls',name:'Új lapfül',icon:'home',background:{type:'color',value:'#506559'},blocks:[]});
+    app.tab=tabs.length-1; refresh();
+  }); add.disabled=tabs.length>=8;
+  const group=panel('Lapfülek',add);
+  if(!tabs.length){group.append(el('p','empty','Adj hozzá egy lapfület, majd válassz hozzá ikont, hátteret és Loxone-elemeket.'));return;}
+  const strip=el('div','tabstrip'); strip.style.marginTop='16px';
+  tabs.forEach((t,idx)=>{const b=button(t.name||'Új lapfül',()=>{app.tab=idx;render();}); if(idx===app.tab)b.setAttribute('aria-current','page');strip.append(b);});group.append(strip);
+  const tab=tabs[app.tab],p=panel(tab.name||'Új lapfül',itemTools(tabs,app.tab,'Törlöd a lapfület és a rajta lévő elemeket?',idx=>{app.tab=idx;},()=>{app.tab=Math.max(0,Math.min(app.tab,tabs.length-1));}));
+  const g=grid(p);input(g,'Lap neve',tab,'name','text',{maxlength:80},v=>{
+    strip.children[app.tab].textContent=v;p.querySelector('h2').textContent=v;
+  });
+  const kind=el('select');
+  for(const [v,label] of Object.entries({controls:'Okosotthon',energy:'Energiaáramlás'})){
+    const opt=el('option','',label);opt.value=v;kind.append(opt);
+  }
+  kind.value=tab.kind;
+  kind.onchange=()=>{
+    const previous=tab.kind;
+    if((tab.blocks?.length||Object.keys(tab.energy||{}).length) && !confirm('A típusváltás törli ezen a lapon az elemeket vagy a hozzárendeléseket. Folytatod?')){kind.value=previous;return;}
+    tab.kind=kind.value;
+    if(tab.kind==='energy'){delete tab.blocks;delete tab.background;tab.energy={};tab.icon='energy';}
+    else{delete tab.energy;tab.blocks=[];tab.background={type:'color',value:'#506559'};tab.icon='home';}
+    refresh();
+  };g.append(field('Lap típusa',kind),field('Felső sáv ikonja',assetButton('icons',tab.icon,id=>{tab.icon=id;})));
+  if(tab.kind==='energy'){renderEnergy(p,tab);return;}
+  const bg=tab.background;
+  g.append(field('Háttér típusa',select(bg,'type',{color:'Egyszínű',image:'Háttérkép'},value=>{
+    bg.value=value==='color'?'#506559':(app.assets.backgrounds[0]?.id||'');render();
+  })));
+  if(bg.type==='color')input(g,'Háttérszín',bg,'value','color');
+  else g.append(field('Háttérkép',assetButton('backgrounds',bg.value,id=>{bg.value=id;})));
+  const addBlock=button('+ Elem',()=>{tab.blocks.push({id:nextId(),type:'switch',name:'Új elem',uuid:'',stateUuid:'',unit:''});refresh();});
+  addBlock.disabled=tab.blocks.length>=12;
+  const blocks=panel('Oldalelemek',addBlock);
+  if(!tab.blocks.length)blocks.append(el('p','empty','Válassz egy elemet az egyfunkciós nézethez, vagy adj hozzá többet a listanézethez.'));
+  tab.blocks.forEach((b,i)=>renderBlock(blocks,tab,b,i));
+}
+function renderLoxone(){
+  const p=panel('Miniserver-kapcsolat',button('Adatlista frissítése',refreshControls));
+  const hint=el('p','hint',app.connectionStatus || (app.connected?'Kapcsolódva.':'Mentsd a kapcsolat adatait a Loxone-objektumok betöltéséhez.'));p.append(hint);
+  const lx=app.profile.loxone,g=grid(p);g.style.marginTop='16px';
+  input(g,'Miniserver címe',lx,'host','text',{placeholder:'192.168.1.77',maxlength:127});
+  input(g,'Port',lx,'port','number',{min:1,max:65535});
+  input(g,'Loxone-felhasználónév',lx,'user','text',{maxlength:95,autocomplete:'off'});
+  secret(g,'Loxone-jelszó','loxonePassword');
+  g.append(check('Titkosított kapcsolat (TLS)',lx,'tls',checked=>{
+    if(checked && lx.port===80) lx.port=443; else if(!checked && lx.port===443)lx.port=80;render();
+  }));
+  if(lx.tls){
+    const ta=el('textarea');ta.rows=5;ta.maxLength=4095;ta.value=lx.ca_pem;ta.oninput=()=>{lx.ca_pem=ta.value;changed();};
+    const f=field('Saját hitelesítésszolgáltató tanúsítványa (PEM)',ta);f.classList.add('span');g.append(f);
+  }
+  const web=panel('Webes hozzáférés'),w=grid(web);
+  input(w,'Adminisztrátori felhasználónév',app.profile,'adminUser','text',{maxlength:63});
+  secret(w,'Adminisztrátori jelszó','adminPassword');
+  web.append(el('p','hint','A fiók a beállításokat és a frissítési oldalt is védi. Üres felhasználónévvel az adminfelület a helyi hálózaton szabadon elérhető.'));
+}
+function renderDisplay(){
+  const d=app.profile.display,p=panel('Fényerő és képernyőkímélő'),g=grid(p);
+  input(g,'Nappali fényerő (%)',d,'dayBrightness','number',{min:1,max:100});
+  input(g,'Éjszakai fényerő (%)',d,'nightBrightness','number',{min:1,max:100});
+  input(g,'Képernyőkímélő késleltetése (mp)',d,'saverSeconds','number',{min:0,max:86400,placeholder:'0'});
+  p.append(el('p','hint','A 0 kikapcsolja az automatikus képernyőkímélőt. Érintésre visszatér az utolsó lap.'));
+  const night=grid(panel('Éjszakai mód'));
+  night.append(field('Vezérlés',select(d,'nightMode',{timer:'Időzítés',value:'Loxone-érték'},render)));
+  if(d.nightMode==='timer'){
+    input(night,'Éjszaka kezdete',d,'nightStart','time'); input(night,'Éjszaka vége',d,'nightEnd','time');
+  } else night.append(field('Éjszakai mód állapota',mappingInput(d,'nightUuid',app.controls,'uuid')));
+}
+const touchCornerNames=['Bal felső','Jobb felső','Bal alsó','Jobb alsó'];
+const touchTypes={'':'Nincs hozzárendelve',pulse:'Nyomógomb',switch:'Kapcsoló',shading:'Árnyékolás',
+  audio:'Audiolejátszó',lighting:'Világításvezérlő'};
+const touchActions={
+  pulse:{trigger:'Impulzus'},switch:{trigger:'Impulzus'},shading:{up:'Fel impulzus',down:'Le impulzus'},
+  audio:{volumeUp:'Hangerő növelése',volumeDown:'Hangerő csökkentése',next:'Következő szám',
+    previous:'Előző szám',playPause:'Lejátszás / szünet'},
+  lighting:{next:'Következő világítási kép',previous:'Előző világítási kép',scene:'Adott világítási kép'}
+};
+function blankCorner(){return {type:'',uuid:'',action:'',sceneId:0};}
+function touchProfile(){
+  const t=app.profile.touch??={enabled:false,tapWindowMs:400,corners:touchCornerNames.map(blankCorner),center:{uuid:'',inputUuid:''}};
+  t.dayTextColor??='#8B8C8E';
+  return t;
+}
+function touchEligible(type,row){
+  if(!row.control_uuid || row.secured || row.action_uuid==='')return false;
+  switch(type){
+    case 'pulse':return row.touch_button===true;
+    case 'switch':return row.touch_switch===true;
+    case 'lighting':return row.touch_target===true && row.type==='LightControllerV2' && row.lighting_blocked===false;
+    case 'shading':return row.touch_target===true && ['Jalousie','CentralJalousie'].includes(row.type) && row.shading_blocked===false;
+    case 'audio':return row.touch_target===true && row.controls_type==='audio' && row.controls_blocked===false;
+    case 'input':return row.touch_input===true;
+    default:return false;
+  }
+}
+function option(value,label){
+  const o=el('option','',label);o.value=String(value);return o;
+}
+function touchController(label,type,uuid,update,placeholder='Válassz vezérlőt'){
+  const s=el('select');s.setAttribute('aria-label',label);s.append(option('',placeholder));
+  const unique=new Map();
+  for(const row of app.controls)
+    if(touchEligible(type,row) && !unique.has(row.control_uuid))unique.set(row.control_uuid,rowLabel(row,false)||row.control_uuid);
+  for(const [key,name] of [...unique].sort((a,b)=>a[1].localeCompare(b[1],'hu')))s.append(option(key,name));
+  if(uuid && !unique.has(uuid))s.append(option(uuid,'Mentett vezérlő · '+uuid));
+  s.value=uuid||'';s.onchange=()=>{update(s.value);changed();render();};
+  return field(label,s);
+}
+function touchVirtualInput(binding,label,heading,empty,hint){
+  const details=el('details','touch-input span');details.open=!!binding.inputUuid;
+  details.append(el('summary','',heading),touchController(label,'input',binding.inputUuid,uuid=>{
+    binding.inputUuid=uuid;
+  },empty),el('p','hint',hint));
+  return details;
+}
+function touchSceneChooser(corner){
+  const wrapper=el('div','touch-scene'),selectBox=el('select'),note=el('p','hint');
+  selectBox.setAttribute('aria-label','Világítási kép');
+  wrapper.append(field('Világítási kép',selectBox),note);
+  const uuid=corner.uuid;
+  function fill(items){
+    selectBox.replaceChildren(option('','Válassz világítási képet'));
+    const seen=new Set();
+    for(const m of items){
+      if(!Number.isInteger(m.id) || m.id<0 || m.id>2147483647 || seen.has(m.id))continue;
+      seen.add(m.id);selectBox.append(option(m.id,m.name||String(m.id)));
+    }
+    if(Number.isInteger(corner.sceneId) && !seen.has(corner.sceneId))
+      selectBox.append(option(corner.sceneId,'Mentett világítási kép · '+corner.sceneId));
+    selectBox.value=corner.sceneId==null?'':String(corner.sceneId);
+    selectBox.disabled=!items.length;
+  }
+  selectBox.onchange=()=>{corner.sceneId=selectBox.value===''?null:Number(selectBox.value);changed();};
+  fill([]);
+  if(!uuid){note.textContent='Először válassz világításvezérlőt.';return wrapper;}
+  let attempts=0;
+  async function load(){
+    if(!wrapper.isConnected)return;
+    try{
+      const data=await getJSON('/api/touch/moods?uuid='+encodeURIComponent(uuid));
+      if(!wrapper.isConnected)return;
+      if(data.status==='loading' && ++attempts<20){
+        note.textContent='Világítási képek beolvasása…';setTimeout(load,750);return;
+      }
+      const moods=Array.isArray(data.moods)?data.moods:[];
+      fill(moods);
+      if(data.status==='ready' && moods.length){
+        if(corner.sceneId!=null && !moods.some(m=>m.id===corner.sceneId)){
+          note.textContent='A mentett világítási kép már nincs a blokk listájában. Válassz újat.';
+          selectBox.addEventListener('change',()=>note.remove(),{once:true});
+        }else note.remove();
+        return;
+      }
+      note.textContent=data.status==='offline'?'A Miniserver nem érhető el. ':
+        data.status==='ready'?'A blokk nem adott vissza világítási képet. ':
+        data.status==='unsupported'?'Ez a vezérlő nem szolgáltat világítási képeket. ':'A lista beolvasása még tart. ';
+    }catch{if(!wrapper.isConnected)return;note.textContent='A lista lekérése sikertelen. ';}
+    note.append(button('Újrapróbálás',()=>{attempts=0;note.textContent='Betöltés…';load();},'text-button'));
+  }
+  // Render attaches the fresh fieldset before the first request is made.
+  queueMicrotask(load);return wrapper;
+}
+function touchCorner(corner,index){
+  const box=el('fieldset','touch-zone');box.append(el('legend','',touchCornerNames[index]));
+  const type=select(corner,'type',touchTypes,()=>{
+    delete corner.inputUuid;
+    Object.assign(corner,{uuid:'',action:Object.keys(touchActions[corner.type]||{})[0]||'',sceneId:0});render();
+  });
+  type.setAttribute('aria-label','Funkció');box.append(field('Funkció',type));
+  if(!corner.type)return box;
+  box.append(touchController('Vezérlő',corner.type,corner.uuid,uuid=>{
+    corner.uuid=uuid;delete corner.inputUuid;if(corner.action==='scene')corner.sceneId=null;
+  }));
+  const action=select(corner,'action',touchActions[corner.type],()=>{
+    corner.sceneId=corner.action==='scene'?null:0;render();
+  });
+  action.setAttribute('aria-label','Művelet');box.append(field('Művelet',action));
+  if(corner.action==='scene')box.append(touchSceneChooser(corner));
+  if(corner.type==='switch' && corner.uuid)
+    box.append(touchVirtualInput(corner,'Virtuális nyomógomb a Tr bemenethez','Loxone Configban bekötött Tr bemenet',
+      'Közvetlen átkapcsolás','Alapból a panel a kapcsoló visszajelzett állapotát váltja át. Tr-impulzushoz válaszd a Configban a kapcsoló Tr bemenetére kötött virtuális nyomógombot.'));
+  return box;
+}
+function touchError(t){
+  if(!t)return '';
+  if(!Number.isInteger(t.tapWindowMs) || t.tapWindowMs<150 || t.tapWindowMs>1000)
+    return 'A középső koppintások közötti idő 0,150 és 1,000 másodperc között lehet.';
+  for(const [i,c] of t.corners.entries()){
+    if(!c.type)continue;
+    if(!c.uuid)return touchCornerNames[i]+' sarok: válassz vezérlőt.';
+    if(c.action==='scene' && !Number.isInteger(c.sceneId))return touchCornerNames[i]+' sarok: válassz világítási képet.';
+  }
+  return '';
+}
+function renderTouch(){
+  const t=touchProfile(),top=panel('Használat Touch-ként');
+  const settings=grid(top);
+  settings.append(check('Érintési zónák engedélyezése a képernyőkímélőn',t,'enabled'));
+  input(settings,'Nappali szövegszín',t,'dayTextColor','color',{'aria-describedby':'touch-color-hint'});
+  top.append(el('p','hint','Az óra képernyőjén a négy sarokhoz külön művelet, középre a helyiség világításvezérlője rendelhető.'));
+  const colorHint=el('p','hint','Az óra és az alsó felirat nappal a kiválasztott színnel, éjszaka tompa vörössel jelenik meg. Az osztóvonal mindkét esetben ugyanezt a színt használja 50%-os fedettséggel.');
+  colorHint.id='touch-color-hint';top.append(colorHint);
+  if(!app.profile.display.saverSeconds){
+    const hint=el('p','hint','Az automatikus képernyőkímélő jelenleg ki van kapcsolva. ');
+    hint.append(button('Kijelző beállításai',()=>{app.section='display';render();},'text-button'));top.append(hint);
+  }
+  if(!app.controls.length){
+    const missing=el('p','hint','A vezérlőlista még üres. ');
+    missing.append(button('Miniserver adatlista',()=>{app.section='loxone';render();},'text-button'));top.append(missing);
+  }
+  const cornerPanel=panel('Sarkok');
+  const corners=el('div','touch-zones');cornerPanel.append(corners);
+  t.corners.forEach((c,i)=>corners.append(touchCorner(c,i)));
+  const center=panel('Középső érintési zóna'),g=grid(center);
+  g.append(touchController('Középső világításvezérlő','lighting',t.center.uuid,uuid=>{
+    t.center.uuid=uuid;t.center.inputUuid='';
+  },'Nincs hozzárendelve'));
+  const gap=el('input');gap.type='number';gap.min='0.15';gap.max='1';gap.step='0.001';
+  gap.value=Number.isInteger(t.tapWindowMs)?t.tapWindowMs/1000:'';
+  gap.oninput=()=>{t.tapWindowMs=gap.value && gap.validity.valid?Math.round(gap.valueAsNumber*1000):null;changed();};
+  g.append(field('Koppintások közötti megengedett szünet (mp)',gap));
+  if(t.center.uuid)
+    g.append(touchVirtualInput(t.center,'Virtuális nyomógomb az M+ bemenethez','Loxone Configban bekötött M+ bemenet',
+      'Közvetlen világításvezérlés','Az egy, kettő vagy három koppintás alapból ugyanennyi + parancsot küld. A blokk 2C/3C kimeneteihez válaszd ki a Configban a fényvezérlő M+ bemenetére kötött virtuális nyomógombot.'));
+}
+function uploadToneZip(file,onProgress){
+  return new Promise((resolve,reject)=>{
+    const request=new XMLHttpRequest();
+    request.open('POST','/api/ringtones/upload');
+    request.setRequestHeader('Content-Type','application/zip');
+    request.setRequestHeader('X-Panel-Request','1');
+    request.upload.onprogress=event=>onProgress(event.loaded,file.size);
+    request.onload=()=>{
+      if(request.status===200)resolve();
+      else reject(Error(request.responseText||'A csengőhangcsomag telepítése sikertelen.'));
+    };
+    request.onerror=()=>reject(Error('Megszakadt a kapcsolat a kijelzővel. A feltöltést megismételheted.'));
+    request.send(file);
+  });
+}
+function renderRingtones(config){
+  const btn=button('Csengőhangcsomag letöltése',download),p=panel('Csengőhangok',btn),g=grid(p);
+  const chooser=el('select'), muted=el('option','','Néma');
+  muted.value='';chooser.append(muted);
+  g.append(field('Csengőhang',chooser),check('Csengőhang ismétlése',config,'ringtoneRepeat'));
+  const hint=el('p','hint');hint.setAttribute('role','status');hint.setAttribute('aria-live','polite');p.append(hint);
+  const preview=el('audio'),sample=el('div','span');
+  const play=button('Hangminta lejátszása',async()=>{
+    const name=previewName;
+    if(!name)return;
+    preview.src='/api/ringtones/preview?name='+encodeURIComponent(name);
+    preview.hidden=false;play.hidden=true;
+    try{await preview.play();}
+    catch{
+      if(name===previewName && sample.isConnected){
+        hint.classList.add('error');hint.textContent='A hangminta nem játszható le.';
+        play.hidden=false;preview.hidden=true;
+      }
+    }
+  });
+  preview.controls=true;preview.preload='none';preview.hidden=true;
+  preview.setAttribute('aria-label','A kiválasztott csengőhang lejátszója');
+  sample.append(el('p','caption','Hangminta ezen az eszközön'),play,preview);g.append(sample);
+  let playable=new Set(),previewName='';
+  function refreshPreview(){
+    const name=playable.has(config.ringtone)?config.ringtone:'';
+    sample.hidden=!name;
+    if(previewName===name)return;
+    previewName=name;preview.pause();
+    if(preview.hasAttribute('src')){preview.removeAttribute('src');preview.load();}
+    play.hidden=false;preview.hidden=true;
+  }
+  chooser.onchange=()=>{config.ringtone=chooser.value;changed();refreshPreview();};
+  // Until the SD catalog arrives, preserve a saved selection, including custom filenames.
+  function setChoices(items){
+    const options=[muted];
+    const names=new Set(['']);
+    for(const item of items){
+      if(!item.name || names.has(item.name)) continue;
+      const opt=el('option','',item.label||item.name);opt.value=item.name;
+      options.push(opt);names.add(item.name);
+    }
+    if(config.ringtone && !names.has(config.ringtone)){
+      const opt=el('option','',config.ringtone+' (mentett)');opt.value=config.ringtone;options.push(opt);
+    }
+    playable=names;
+    const old=Array.from(chooser.options);
+    if(old.length!==options.length || options.some((opt,i)=>old[i].value!==opt.value || old[i].text!==opt.text))
+      chooser.replaceChildren(...options);
+    chooser.value=config.ringtone;refreshPreview();
+  }
+  const local=el('details','local-zip'),summary=el('summary','','Helyi ZIP telepítése');
+  const localForm=el('div','stack'),file=el('input'),upload=button('ZIP feltöltése',installLocal);
+  file.type='file';file.accept='.zip,application/zip';
+  const localStatus=el('p','hint');localStatus.setAttribute('role','status');
+  const meter=el('progress');meter.max=100;meter.hidden=true;meter.setAttribute('aria-label','ZIP-feltöltés');
+  localForm.append(field('Csengőhangcsomag (ZIP, legfeljebb 8 MiB)',file),upload,meter,localStatus);
+  local.append(summary,localForm);p.append(local);
+  let loading=false,operation=false;
+  function setBusy(value){
+    operation=value;
+    btn.disabled=value;file.disabled=value;upload.disabled=value||!!fileError(file.files[0]);
+  }
+  function fileError(selected){
+    if(!selected)return 'Válassz egy ZIP-csomagot.';
+    if(!/\.zip$/i.test(selected.name))return 'ZIP kiterjesztésű hangcsomagot válassz.';
+    if(selected.size<22 || selected.size>8*1024*1024)return 'A ZIP mérete 22 bájt és 8 MiB között lehet.';
+    return '';
+  }
+  file.onchange=()=>{
+    const selected=file.files[0],error=selected?fileError(selected):'';
+    localStatus.textContent=error;localStatus.classList.toggle('error',!!error);meter.hidden=true;
+    upload.disabled=operation||!selected||!!error;
+  };
+  async function installLocal(){
+    if(operation)return;
+    const selected=file.files[0],error=fileError(selected);
+    localStatus.classList.toggle('error',!!error);
+    if(error){localStatus.textContent=error;return;}
+    setBusy(true);meter.hidden=false;meter.value=0;localStatus.textContent='Feltöltés indítása…';
+    try{
+      await uploadToneZip(selected,(received,total)=>{
+        if(!local.isConnected)return;
+        meter.value=Math.min(100,Math.round(100*received/total));
+        localStatus.textContent=received<total?'Feltöltés: '+meter.value+'%':'A panel ellenőrzi és telepíti a csomagot…';
+      });
+      file.value='';meter.value=100;localStatus.textContent='A helyi csengőhangcsomag telepítve.';
+      await load();
+    }catch(e){
+      localStatus.textContent=e.message;localStatus.classList.add('error');meter.hidden=true;
+      setBusy(false);
+    }
+  }
+  async function load(){
+    if(loading || !p.isConnected) return;
+    loading=true;setBusy(true);
+    try{
+      const state=await getJSON('/api/ringtones');
+      if(!p.isConnected) return;
+      setChoices(state.items||[]);
+      const running=state.status==='downloading',failed=state.status==='error';
+      const mib=n=>(Number(n)/1048576).toLocaleString('hu-HU',{maximumFractionDigits:1});
+      const count=Number(state.total)>0?' ('+mib(state.completed)+' / '+mib(state.total)+' MiB)':'';
+      const version=state.version?' · '+state.version:'';
+      hint.classList.toggle('error',failed);
+      hint.textContent=running?'A kijelző a csengőhangokat tölti le…'+count:
+        failed?(state.message||'A csengőhangcsomag letöltése sikertelen.') :
+        state.status==='ready'?'Telepített csengőhangok: '+(state.items||[]).length+version:
+        'A kijelző a Zolee Energy Flow Display hangcsomagját közvetlenül az SD-kártyára tölti.';
+      btn.textContent=running?'Letöltés folyamatban…':state.status==='ready'?'Csengőhangcsomag frissítése':'Csengőhangcsomag letöltése';
+      setBusy(running);
+      if(running)setTimeout(load,1000);
+    }catch(e){
+      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;setBusy(false);}
+    }finally{loading=false;}
+  }
+  async function download(){
+    if(btn.disabled) return;
+    setBusy(true);hint.classList.remove('error');hint.textContent='Letöltés indítása…';
+    try{
+      const response=await fetch('/api/ringtones/download',{method:'POST',headers:{'X-Panel-Request':'1'}});
+      if(!response.ok)throw Error(await response.text());
+      await load();
+    }catch(e){
+      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;setBusy(false);}
+    }
+  }
+  setChoices([{name:'tubular-chime.wav',label:'Csőharang'}]);load();
+}
+function renderIntercom(){
+  const o=app.profile.intercom,p=panel('Kaputelefon'),g=grid(p);
+  g.append(check('Kaputelefon engedélyezése',o,'enabled',render));
+  if(o.enabled){
+    input(g,'Kamera MJPEG-címe',o,'cameraUrl','url',{maxlength:256,placeholder:'http://192.168.1.50/mjpg/video.mjpg'});
+    input(g,'Kamera felhasználóneve',o,'cameraUser','text',{maxlength:95}); secret(g,'Kamera jelszava','cameraPassword');
+    g.append(field('Csengetés folyamatban',mappingInput(o,'uuid',app.controls,'uuid')),
+      field('Kapunyitó parancs (opcionális)',mappingInput(o,'gateUuid',app.controls.filter(r=>eligible('pulse',r)),'control_uuid')));
+    input(g,'Hangszóró hangereje (%)',o,'speakerVolume','number',{min:0,max:100});
+    input(g,'Mikrofon erősítése (%)',o,'microphoneGain','number',{min:0,max:100});
+  }
+  renderRingtones(o);
+}
+function render(){
+  if(!app.profile)return;
+  const preview=editor.querySelector('audio');
+  if(preview){preview.pause();preview.removeAttribute('src');preview.load();}
+  lists=new Map(); editor.replaceChildren();
+  for(const b of document.querySelectorAll('[data-section]')){
+    if(b.dataset.section===app.section)b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+  }
+  ({tabs:renderTabs,loxone:renderLoxone,display:renderDisplay,intercom:renderIntercom,touch:renderTouch})[app.section]();
+}
+for(const b of document.querySelectorAll('[data-section]'))b.onclick=()=>{app.section=b.dataset.section;render();};
+async function getJSON(url){
+  const res=await fetch(url,{cache:'no-store'});if(!res.ok)throw Error(await res.text()||res.statusText);return res.json();
+}
+async function refreshControls(event){
+  const b=event.currentTarget;b.disabled=true;
+  const status=b.closest('.panel').querySelector('.hint');status.textContent='Miniserver-adatlista frissítése…';
+  try{
+    const url='/api/controls/refresh',request=await fetch(url,{method:'POST',headers:{'X-Panel-Request':'1'}});
+    if(!request.ok)throw Error(await request.text());
+    const deadline=Date.now()+45000;
+    while((await getJSON(url)).refreshing){
+      if(Date.now()>=deadline)throw Error('Az adatlista frissítése még folyamatban van. Próbáld újra később.');
+      await new Promise(resolve=>setTimeout(resolve,1000));
+    }
+    await fetchControls();if(app.section==='loxone')render();
+  }catch(e){status.textContent=e.message;status.classList.add('error');}finally{b.disabled=false;}
+}
+async function fetchControls(){
+  const response=await getJSON('/api/controls');app.controls=response.controls||[];
+  app.connected=!!response.connected;app.connectionStatus=response.status||'';
+}
+save.onclick=async()=>{
+  const issue=touchError(app.profile?.touch);
+  if(issue){app.section='touch';render();say(issue,true);return;}
+  app.busy=true;save.disabled=true;editor.inert=true;
+  try{
+    const body={...app.profile,...app.secrets};
+    const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Request':'1'},body:JSON.stringify(body)});
+    if(!res.ok)throw Error(await res.text());
+    app.profile=await res.json();app.secrets={};app.dirty=false;say('Beállítások mentve az SD-kártyára.');render();
+  }catch(e){say(e.message,true);}
+  finally{app.busy=false;save.disabled=!app.dirty;editor.inert=false;}
+};
+window.addEventListener('beforeunload',event=>{if(app.dirty){event.preventDefault();event.returnValue='';}});
+(async()=>{
+  try{
+    app.profile=await getJSON('/api/config');
+    try{app.assets=await getJSON('/assets/catalog.json');}catch{ /* First boot has no asset pack yet. */ }
+    try{await fetchControls();}catch{ /* Offline setup allows manual UUIDs. */ }
+    say(app.connected?'Miniserver csatlakoztatva.':'Helyi konfiguráció');render();
+  }catch(e){say('A beállítások nem tölthetők be. '+e.message,true);}
+})();
