@@ -7,7 +7,7 @@
 
 enum {
     SIDE = 720, MID = SIDE / 2, WING_TIP = 46, WING_END = 274,
-    UNLOCK_BAND = 52, UNLOCK_RISE = 90, UNLOCK_DRIFT = 60,
+    UNLOCK_HEIGHT = 52, UNLOCK_HALF_WIDTH = 112, UNLOCK_RISE = 90, UNLOCK_DRIFT = 60,
     TAP_DRIFT = 24, TAP_HOLD_MS = 600
 };
 enum { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER };
@@ -21,6 +21,11 @@ static struct {
     contact_t contact;
     void (*unlock)(void);
 } touch;
+
+static bool on_unlock_rail(lv_point_t p)
+{
+    return p.y >= SIDE - UNLOCK_HEIGHT && p.x >= MID - UNLOCK_HALF_WIDTH && p.x <= MID + UNLOCK_HALF_WIDTH;
+}
 
 static unsigned zone_at(lv_point_t p)
 {
@@ -75,8 +80,8 @@ static void begin(lv_point_t p, lv_indev_t *finger, uint32_t now)
     touch.finger = finger;
     touch.origin = p;
     touch.down_at = now;
-    /* Az alsó sávban kezdett érintés kizárólag feloldásra szolgál, kapcsolat nélkül is. */
-    if (p.y >= SIDE - UNLOCK_BAND) {
+    /* Az alsó jelzésről indított húzás kapcsolat nélkül is feloldhatja a képernyőt. */
+    if (on_unlock_rail(p)) {
         touch.taps = 0;
         touch.contact = SWIPE;
         return;
@@ -100,7 +105,7 @@ static void motion(lv_point_t p)
     if (touch.contact == SWIPE && (abs(dx) > UNLOCK_DRIFT || dy > TAP_DRIFT))
         touch.contact = CANCELED;
     if (touch.contact == KEY_DOWN && (abs(dx) > TAP_DRIFT || abs(dy) > TAP_DRIFT ||
-        dx * dx + dy * dy > TAP_DRIFT * TAP_DRIFT || p.y >= SIDE - UNLOCK_BAND || zone_at(p) != touch.zone))
+        dx * dx + dy * dy > TAP_DRIFT * TAP_DRIFT || on_unlock_rail(p) || zone_at(p) != touch.zone))
         touch.contact = CANCELED;
     if (touch.contact == CANCELED)
         touch.taps = 0;
