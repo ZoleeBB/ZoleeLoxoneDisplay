@@ -10,9 +10,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifndef PROFILE_PATH
 #define PROFILE_PATH "/sdcard/panel.json"
+#endif
 #define GET(o,k) cJSON_GetObjectItemCaseSensitive(o,k)
-#define WIPE(data) mbedtls_platform_zeroize(data, sizeof(data))
+#define WIPE(data) mbedtls_platform_zeroize(&(data), sizeof(data))
 static const char *const secret_keys[]={"loxonePassword","cameraPassword","adminPassword"};
 typedef struct { char value[3][PANEL_SECRET_CAP]; } secrets_t;
 static SemaphoreHandle_t lock;
@@ -25,7 +27,7 @@ static const char defaults[] =
     "\"display\":{\"dayBrightness\":80,\"nightBrightness\":10,\"saverSeconds\":0,"
     "\"nightMode\":\"timer\",\"nightStart\":\"22:00\",\"nightEnd\":\"06:00\",\"nightUuid\":\"\"},"
     "\"intercom\":{\"enabled\":false,\"uuid\":\"\",\"gateUuid\":\"\",\"cameraUrl\":\"\","
-    "\"cameraUser\":\"\",\"speakerVolume\":55,\"microphoneGain\":80,\"ringtone\":\"\",\"ringtoneRepeat\":false},"
+    "\"cameraUser\":\"\",\"speakerVolume\":55,\"microphoneGain\":80,\"ringtone\":\"tubular-chime.wav\",\"ringtoneRepeat\":false},"
     "\"tabs\":[]}";
 
 static const char *string(const cJSON *obj,const char *key) {
@@ -74,7 +76,7 @@ static bool transfer_secrets(const cJSON *p,cJSON *vault,secrets_t *s,bool encry
         if(!entry || !panel_secret_crypt(s->value[i],context,entry,encrypt)) return false;
     }
     /* Never expose an authenticated panel if its admin secret fails to load. */
-    return !*string(p,"adminUser") == !s->value[2][0];
+    return (*string(p,"adminUser") != 0) == (s->value[2][0] != 0);
 }
 static cJSON *load_file(const char *path,secrets_t *s) {
     FILE *f=fopen(path,"rb");
@@ -212,6 +214,12 @@ esp_err_t panel_config_save(const cJSON *input,char *error,size_t n) {
         associated(next,i,after);
         if(v && v->valuestring[0]) strcpy(fresh.value[i],v->valuestring);
         else if(!strcmp(before,after)) memcpy(fresh.value[i],saved.value[i],PANEL_SECRET_CAP);
+    }
+    if(*string(GET(next,"loxone"),"host") && !fresh.value[0][0]) {
+        message(error,n,"Ehhez a Miniserverhez és felhasználóhoz adj meg jelszót."); err=ESP_ERR_INVALID_ARG; goto done;
+    }
+    if(cJSON_IsTrue(GET(GET(next,"intercom"),"enabled")) && !fresh.value[1][0]) {
+        message(error,n,"Az engedélyezett kaputelefonhoz adj meg kamera-jelszót."); err=ESP_ERR_INVALID_ARG; goto done;
     }
     if(!*string(next,"adminUser")) WIPE(fresh.value[2]);
     if(*string(next,"adminUser") && !fresh.value[2][0]) {

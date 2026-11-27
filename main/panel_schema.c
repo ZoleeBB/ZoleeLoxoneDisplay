@@ -63,8 +63,9 @@ static bool connection(const cJSON *o) {
     const char *h=str(o,"host");
     return fields(o,"host port tls user ca_pem") && string_field(o,"host",127,true) &&
         strspn(h,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")==strlen(h) &&
-        integer(o,"port",1,65535) && cJSON_IsBool(GET(o,"tls")) && string_field(o,"user",95,true) &&
-        string_field(o,"ca_pem",4095,true);
+        integer(o,"port",1,65535) && cJSON_IsBool(GET(o,"tls")) && string_field(o,"user",95,!*h) &&
+        string_field(o,"ca_pem",4095,true) && (!cJSON_IsTrue(GET(o,"tls")) || !*h ||
+        strstr(str(o,"ca_pem"),"-----BEGIN CERTIFICATE-----"));
 }
 static bool display(const cJSON *o) {
     return fields(o,"dayBrightness nightBrightness saverSeconds nightMode nightStart nightEnd nightUuid") &&
@@ -84,7 +85,7 @@ static bool intercom(const cJSON *o) {
     bool enabled=cJSON_IsTrue(GET(o,"enabled"));
     return fields(o,"enabled uuid gateUuid cameraUrl cameraUser speakerVolume microphoneGain ringtone ringtoneRepeat") &&
         cJSON_IsBool(GET(o,"enabled")) && uuid(str(o,"uuid"),!enabled) && uuid(str(o,"gateUuid"),true) &&
-        string_field(o,"cameraUrl",256,!enabled) && camera_url(url) && string_field(o,"cameraUser",95,true) &&
+        string_field(o,"cameraUrl",256,!enabled) && camera_url(url) && string_field(o,"cameraUser",95,!enabled) &&
         integer(o,"speakerVolume",0,100) && integer(o,"microphoneGain",0,100) &&
         string_field(o,"ringtone",64,true) && strspn(str(o,"ringtone"),"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.") == strlen(str(o,"ringtone")) &&
         !strstr(str(o,"ringtone"),"..") && cJSON_IsBool(GET(o,"ringtoneRepeat"));
@@ -100,19 +101,26 @@ static bool energy(const cJSON *o) {
     }
     return true;
 }
+static bool bounded_number(const cJSON *v) {
+    return !v || (cJSON_IsNumber(v) && isfinite(v->valuedouble) && fabs(v->valuedouble)<=1e6);
+}
 static bool block(const cJSON *b) {
     const char *t=str(b,"type");
-    return fields(b,"id name type uuid stateUuid unit") && identifier(str(b,"id")) &&
+    return fields(b,"id name type uuid stateUuid unit decimals scale offset allowPermanent") && identifier(str(b,"id")) && strcmp(str(b,"id"),"intercom-gate") &&
         string_field(b,"name",80,false) && one_of(t,"value pulse switch lighting irc shading dimmer central-lighting slider timed-switch window-monitor gate window audio") &&
         uuid(str(b,"uuid"),!strcmp(t,"value")) && uuid(str(b,"stateUuid"),strcmp(t,"value")!=0) &&
-        string_field(b,"unit",16,true);
+        string_field(b,"unit",16,true) && (!GET(b,"allowPermanent") ||
+        (!strcmp(t,"timed-switch") && cJSON_IsBool(GET(b,"allowPermanent")))) &&
+        (!GET(b,"decimals") || (!strcmp(t,"value") && integer(b,"decimals",0,3))) &&
+        bounded_number(GET(b,"scale")) && bounded_number(GET(b,"offset")) &&
+        (!strcmp(t,"value") || (!GET(b,"scale") && !GET(b,"offset")));
 }
 bool panel_schema_validate(const cJSON *p,char *error,size_t n) {
     const char *why="Érvénytelen konfiguráció vagy sémaverzió.";
     if (!fields(p,"schema revision loxone display tabs intercom adminUser") ||
         !integer(p,"schema",1,1) || !integer(p,"revision",1,2147483647) ||
         !string_field(p,"adminUser",63,true) || strpbrk(str(p,"adminUser"),":\r\n")) goto fail;
-    why="Ellenőrizd a Miniserver címét, portját és kapcsolatbeállításait.";
+    why="Ellenőrizd a Miniserver címét, portját és TLS esetén a CA-tanúsítványt.";
     if (!connection(GET(p,"loxone"))) goto fail;
     why="Érvénytelen időpont, fényerő, időzítés vagy éjszakai állapot-UUID.";
     if (!display(GET(p,"display"))) goto fail;

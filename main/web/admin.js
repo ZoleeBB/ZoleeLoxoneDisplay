@@ -6,13 +6,13 @@ const types = {
   slider:'Analóg értékállító', 'timed-switch':'Időzített kapcsoló', 'window-monitor':'Ajtó–ablak összesítő',
   gate:'Kapu / garázsajtó', window:'Motoros ablak', audio:'Audioserver'
 };
-const blockMatches = {
-  pulse:/Switch|Pushbutton/i, switch:/^Switch$/i, lighting:/^LightControllerV?2?$/i,
-  irc:/^(IRoomControllerV?2?|RoomControllerV?2?)$/i, shading:/Jalousie|Shading|Blind/i,
-  dimmer:/^Dimmer$/i, 'central-lighting':/CentralLight/i, slider:/Slider/i,
-  'timed-switch':/TimedSwitch/i,'window-monitor':/WindowMonitor/i, gate:/Gate/i, window:/^Window$/i,
-  audio:/Audio|Player/i
-};
+function eligible(type,row){
+  if(!row.control_uuid || row.secured || (row.action_uuid==='' && type!=='window-monitor')) return false;
+  if(type==='pulse') return ['Switch','Pushbutton','TimedSwitch'].includes(row.type);
+  if(type==='switch') return row.type==='Switch';
+  if(['lighting','irc','shading'].includes(type)) return row[type+'_blocked']===false;
+  return row.controls_type===type && row.controls_blocked===false;
+}
 const energyFields = {
   PowerGrid:'Hálózati teljesítmény',PowerBat:'Akkumulátorteljesítmény',PowerPV:'Napelem teljesítménye',
   PowerFull:'Ház fogyasztása',SocBat:'Akkumulátor töltöttsége',Status:'Rendszerállapot',
@@ -75,21 +75,27 @@ function secret(g,label,key){
 function rowLabel(r,withState=true){
   return [r.room,r.name,withState?r.state:''].filter(Boolean).join(' · ');
 }
-let listNo=0;
+let lists=new Map();
 function mappingInput(o,key,rows,idKey,onSelected){
-  const list=el('datalist'),i=el('input'),id='uuid-'+(++listNo);
-  list.id=id; i.setAttribute('list',id); i.placeholder='Válassz a listából vagy írj be UUID-t';
-  i.spellcheck=false; i.autocomplete='off'; i.value=o[key]||'';
-  const seen=new Set();
-  for(const r of rows){
-    const value=r[idKey]; if(!value || seen.has(value)) continue;
-    const opt=el('option'); opt.value=value; opt.label=rowLabel(r,idKey==='uuid'); list.append(opt); seen.add(value);
+  const i=el('input');
+  /* All energy mappings and sensor rows on the same page share one state list. */
+  const listKey=idKey==='uuid'?'states':rows.map(r=>r.control_uuid).join(',');
+  if(!lists.has(listKey)){
+    const list=el('datalist');list.id='uuid-'+lists.size;
+    const seen=new Set();
+    for(const r of rows){
+      const value=r[idKey]; if(!value || seen.has(value)) continue;
+      const opt=el('option'); opt.value=value; opt.label=rowLabel(r,idKey==='uuid'); list.append(opt); seen.add(value);
+    }
+    editor.append(list);lists.set(listKey,list.id);
   }
+  i.setAttribute('list',lists.get(listKey));i.placeholder='Válassz a listából vagy írj be UUID-t';
+  i.spellcheck=false;i.autocomplete='off';i.value=o[key]||'';
   i.oninput=()=>{
-    const value=i.value.trim().toLowerCase(); o[key]=value; changed();
-    if(onSelected) onSelected(rows.find(r=>r[idKey]===value));
+    const value=i.value.trim().toLowerCase();o[key]=value;changed();
+    if(onSelected)onSelected(rows.find(r=>r[idKey]===value));
   };
-  const wrap=el('div'); wrap.append(i,list); return wrap;
+  return i;
 }
 function assetURL(kind,id){return '/assets/'+(kind==='icons'?'icons/':'thumbs/')+encodeURIComponent(id)+(kind==='icons'?'.png':'.jpg');}
 function image(kind,id){
@@ -133,14 +139,15 @@ function renderBlock(parent,tab,b,idx){
   const box=el('section','block'),head=el('div','row');
   head.append(el('h3','',b.name||types[b.type]),itemTools(tab.blocks,idx,'Törlöd ezt az elemet?')); box.append(head);
   const g=grid(box);
-  g.append(field('Funkció',select(b,'type',types,()=>{b.uuid='';b.stateUuid='';render();})));
+  g.append(field('Funkció',select(b,'type',types,()=>{b.uuid='';b.stateUuid='';delete b.allowPermanent;delete b.decimals;delete b.scale;delete b.offset;
+    if(b.type==='timed-switch') b.allowPermanent=true;render();})));
   const name=input(g,'Elem neve',b,'name','text',{maxlength:80});
-  const controls=app.controls.filter(r=>!r.secured && (!blockMatches[b.type] || blockMatches[b.type].test(r.type)));
+  const controls=app.controls.filter(r=>eligible(b.type,r));
   if(b.type!=='value'){
     g.append(field('Vezérlőblokk',mappingInput(b,'uuid',controls,'control_uuid',r=>{
       if(!r) return;
       if(!b.name || b.name==='Új elem'){b.name=r.name; name.value=b.name; head.firstChild.textContent=b.name;}
-      const state=app.controls.find(x=>x.control_uuid===r.control_uuid && /^(active|value|position)$/i.test(x.state));
+      const state=app.controls.find(x=>x.control_uuid===r.control_uuid && x.state==='active');
       if(state && b.type==='switch'){b.stateUuid=state.uuid; const fb=box.querySelector('[data-feedback] input');if(fb)fb.value=state.uuid;}
     })));
   }
@@ -149,7 +156,15 @@ function renderBlock(parent,tab,b,idx){
       if(r && (!b.name||b.name==='Új elem')) {b.name=r.name;name.value=b.name;head.firstChild.textContent=b.name;}
     })); state.dataset.feedback='';g.append(state);
   }
-  if(b.type==='value') input(g,'Mértékegység',b,'unit','text',{maxlength:16});
+  if(b.type==='value') {
+    b.decimals??=1;b.scale??=1;b.offset??=0;
+    input(g,'Mértékegység',b,'unit','text',{maxlength:16});
+    input(g,'Tizedesjegyek',b,'decimals','number',{min:0,max:3});
+    input(g,'Szorzó',b,'scale','number',{step:'any',min:-1e6,max:1e6});
+    input(g,'Eltolás',b,'offset','number',{step:'any',min:-1e6,max:1e6});
+  } else if(b.type==='timed-switch'){
+    g.append(check('Tartós bekapcsolás engedélyezése',b,'allowPermanent'));
+  }
   parent.append(box);
 }
 function renderEnergy(p,tab){
@@ -205,7 +220,7 @@ function renderTabs(){
   tab.blocks.forEach((b,i)=>renderBlock(blocks,tab,b,i));
 }
 function renderLoxone(){
-  const p=panel('Miniserver-kapcsolat',button('Adatlista frissítése',async()=>{try{await fetchControls();render();}catch(e){say(e.message,true);}}));
+  const p=panel('Miniserver-kapcsolat',button('Adatlista frissítése',refreshControls));
   const hint=el('p','hint',app.connectionStatus || (app.connected?'Kapcsolódva.':'Mentsd a kapcsolat adatait a Loxone-objektumok betöltéséhez.'));p.append(hint);
   const lx=app.profile.loxone,g=grid(p);g.style.marginTop='16px';
   input(g,'Miniserver címe',lx,'host','text',{placeholder:'192.168.1.77',maxlength:127});
@@ -243,14 +258,16 @@ function renderIntercom(){
   input(g,'Kamera MJPEG-címe',o,'cameraUrl','url',{maxlength:256,placeholder:'http://192.168.1.50/mjpg/video.mjpg'});
   input(g,'Kamera felhasználóneve',o,'cameraUser','text',{maxlength:95}); secret(g,'Kamera jelszava','cameraPassword');
   g.append(field('Csengetés folyamatban',mappingInput(o,'uuid',app.controls,'uuid')),
-    field('Kapunyitó parancs (opcionális)',mappingInput(o,'gateUuid',app.controls.filter(r=>!r.secured && /^(Switch|Pushbutton|TimedSwitch)$/i.test(r.type)),'control_uuid')));
+    field('Kapunyitó parancs (opcionális)',mappingInput(o,'gateUuid',app.controls.filter(r=>eligible('pulse',r)),'control_uuid')));
   input(g,'Hangszóró hangereje (%)',o,'speakerVolume','number',{min:0,max:100});
   input(g,'Mikrofon erősítése (%)',o,'microphoneGain','number',{min:0,max:100});
-  input(g,'Csengőhang fájlneve (opcionális)',o,'ringtone','text',{maxlength:64});g.append(check('Csengőhang ismétlése',o,'ringtoneRepeat'));
+  const tones={'':'Néma','tubular-chime.wav':'Csőharang'};
+  if(o.ringtone && !tones[o.ringtone]) tones[o.ringtone]=o.ringtone;
+  g.append(field('Csengőhang',select(o,'ringtone',tones)),check('Csengőhang ismétlése',o,'ringtoneRepeat'));
 }
 function render(){
   if(!app.profile)return;
-  listNo=0; editor.replaceChildren();
+  lists=new Map(); editor.replaceChildren();
   for(const b of document.querySelectorAll('[data-section]')){
     if(b.dataset.section===app.section)b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
   }
@@ -259,6 +276,20 @@ function render(){
 for(const b of document.querySelectorAll('[data-section]'))b.onclick=()=>{app.section=b.dataset.section;render();};
 async function getJSON(url){
   const res=await fetch(url,{cache:'no-store'});if(!res.ok)throw Error(await res.text()||res.statusText);return res.json();
+}
+async function refreshControls(event){
+  const b=event.currentTarget;b.disabled=true;
+  const status=b.closest('.panel').querySelector('.hint');status.textContent='Miniserver-adatlista frissítése…';
+  try{
+    const url='/api/controls/refresh',request=await fetch(url,{method:'POST',headers:{'X-Panel-Request':'1'}});
+    if(!request.ok)throw Error(await request.text());
+    const deadline=Date.now()+45000;
+    while((await getJSON(url)).refreshing){
+      if(Date.now()>=deadline)throw Error('Az adatlista frissítése még folyamatban van. Próbáld újra később.');
+      await new Promise(resolve=>setTimeout(resolve,1000));
+    }
+    await fetchControls();if(app.section==='loxone')render();
+  }catch(e){status.textContent=e.message;status.classList.add('error');}finally{b.disabled=false;}
 }
 async function fetchControls(){
   const response=await getJSON('/api/controls');app.controls=response.controls||[];

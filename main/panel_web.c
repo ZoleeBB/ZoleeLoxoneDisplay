@@ -117,6 +117,15 @@ static esp_err_t controls_get(httpd_req_t *r) {
     cJSON_AddStringToObject(result,"status",status);
     return json_reply(r,result);
 }
+static esp_err_t controls_refresh(httpd_req_t *r) {
+    bool write=r->method==HTTP_POST;
+    if(!panel_web_authorize(r,write)) return ESP_OK;
+    if(write && zld_loxone_refresh()!=ESP_OK && !zld_loxone_refreshing())
+        return reply(r,"409 Conflict","Az adatlista nem frissíthető. Ellenőrizd a Miniserver-kapcsolatot.");
+    httpd_resp_set_type(r,"application/json");
+    httpd_resp_set_hdr(r,"Cache-Control","no-store");
+    return httpd_resp_sendstr(r,zld_loxone_refreshing()?"{\"refreshing\":true}":"{\"refreshing\":false}");
+}
 static bool asset_name(const char *s,size_t n) {
     if(!n || n>32) return false;
     for(size_t i=0;i<n;i++)
@@ -152,6 +161,7 @@ static esp_err_t asset_get(httpd_req_t *r) {
 httpd_handle_t panel_web_start(void) {
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers=24;
+    config.max_req_hdr_len=2048;
     config.stack_size=12288;
     config.lru_purge_enable=true;
     config.uri_match_fn=httpd_uri_match_wildcard;
@@ -164,6 +174,8 @@ httpd_handle_t panel_web_start(void) {
         {.uri="/api/config",.method=HTTP_GET,.handler=config_get},
         {.uri="/api/config",.method=HTTP_POST,.handler=config_post},
         {.uri="/api/controls",.method=HTTP_GET,.handler=controls_get},
+        {.uri="/api/controls/refresh",.method=HTTP_POST,.handler=controls_refresh},
+        {.uri="/api/controls/refresh",.method=HTTP_GET,.handler=controls_refresh},
         {.uri="/assets/*",.method=HTTP_GET,.handler=asset_get},
     };
     for(size_t i=0;i<sizeof(routes)/sizeof(*routes);i++) {
