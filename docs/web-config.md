@@ -57,6 +57,8 @@ A **Képernyőkímélő késleltetése** az utolsó érintéstől számított m�
 2. Válaszd ki a sarkot, a funkciót, majd a Miniserver megfelelő blokkját. A sarkok külön-külön állíthatók és üresen is hagyhatók. A célblokkot akkor is kiválaszthatod, ha egyik normál lapra sem tetted ki.
 3. A középső mezőhöz válaszd ki a világításvezérlőt. Igény szerint módosítsd az egymást követő koppintások közötti időt. Az alapérték **0,4 s**, az állítható tartomány **0,15–1,00 s**. Mentsd a profilt.
 
+![A webes Touch-beállítások példa-hozzárendelésekkel](images/admin-touch.png)
+
 | Sarokhoz rendelt blokk | Egy koppintás művelete |
 | --- | --- |
 | Nyomógomb | Egy impulzus |

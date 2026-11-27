@@ -42,11 +42,15 @@ Alapbeállítással az első érintés visszahozza az előző lapot. Nulla máso
 
 ## Öt érintőmező az óraképernyőn
 
+| Nappali Touch | Éjszakai Touch |
+| --- | --- |
+| ![Öt érintőmező, szürke óra és az alsó feloldó vonal](images/panel/standby-touch.png) | ![Öt érintőmező vörös órával éjszakai módban](images/panel/standby-touch-night.png) |
+
 Bekapcsolt **Használat Touch-ként** beállításnál az óra látható marad, miközben a négy sarokkal a hozzájuk rendelt eszközöket vezérled. Egy sarok rövid koppintásra működik. A képernyő közepén a halvány ferde vonalakkal határolt, középen kiszélesedő terület egyetlen világításgomb. Dupla vagy tripla koppintáshoz egymás után érintsd meg ezt a területet. Két érintés között alapból legfeljebb 0,4 másodperc telhet el.
 
 A feloldáshoz az alsó vonaltól húzd az ujjadat felfelé, majd emeld fel. Ezzel az előzőleg megnyitott lapra térsz vissza. A feloldás akkor is használható, ha épp megszakadt a kapcsolat a Miniserverrel. A bejövő kapucsengés mindkét képernyőkímélőből megnyitja a kaputelefont. [Gombok hozzárendelése](web-config.md#használat-touch-ként)
 
-A kijelző az első beállítástól kezdve minden új ujjletételnél rövid, halk kattanást ad. Két külön koppintás két kattanás. Egy folyamatos mozdulat, például egy lista görgetése vagy a feloldó húzás, egyet kattan.
+A kijelző az első beállítástól kezdve minden új ujjletételnél rövid, halk kattanást ad. Két külön koppintás két kattanás. Egy folyamatos mozdulat, például egy lista görgetése vagy a feloldó húzás, egyet kattan. A hangmintában a firmware eredeti, 6 ezredmásodperces impulzusa hallható háromszor, erősítés nélkül. [Érintési hangminta (WAV)](media/touch-click.wav)
 
 ## Első bekapcsolás
 
