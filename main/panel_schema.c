@@ -75,12 +75,19 @@ static bool display(const cJSON *o) {
         clock_time(str(o,"nightStart")) && clock_time(str(o,"nightEnd")) &&
         uuid(str(o,"nightUuid"),strcmp(str(o,"nightMode"),"value")!=0);
 }
+static bool touch_input(const cJSON *mapping,const char *target,bool allowed) {
+    if (!GET(mapping,"inputUuid")) return true;
+    const char *input=str(mapping,"inputUuid");
+    return uuid(input,true) && (!*input || (allowed && *target && strcasecmp(input,target)));
+}
+
 static bool touch_corner(const cJSON *corner) {
-    if (!fields(corner,"type uuid action sceneId") ||
+    if (!fields(corner,"type uuid action sceneId inputUuid") ||
         !string_field(corner,"type",16,true) || !string_field(corner,"action",16,true) ||
         !uuid(str(corner,"uuid"),true) || !integer(corner,"sceneId",0,2147483647)) return false;
     const char *type=str(corner,"type"), *action=str(corner,"action"), *id=str(corner,"uuid");
     int scene=GET(corner,"sceneId")->valueint;
+    if (!touch_input(corner,id,!strcmp(type,"switch"))) return false;
     if (!*type) return !*action && !*id && scene==0;
     if (!*id || (scene!=0 && strcmp(action,"scene"))) return false;
     if (one_of(type,"pulse switch")) return !strcmp(action,"trigger");
@@ -95,10 +102,7 @@ static bool touch(const cJSON *section) {
     const cJSON *corners=GET(section,"corners"), *center=GET(section,"center"), *corner;
     if (!cJSON_IsArray(corners) || cJSON_GetArraySize(corners)!=4 ||
         !fields(center,"uuid inputUuid") || !uuid(str(center,"uuid"),true)) return false;
-    if (GET(center,"inputUuid")) {
-        const char *input=str(center,"inputUuid"), *light=str(center,"uuid");
-        if (!uuid(input,true) || (*input && (!*light || !strcasecmp(input,light)))) return false;
-    }
+    if (!touch_input(center,str(center,"uuid"),true)) return false;
     cJSON_ArrayForEach(corner,corners) if (!touch_corner(corner)) return false;
     return true;
 }

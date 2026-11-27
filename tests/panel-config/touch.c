@@ -40,6 +40,21 @@ static void allowed_actions(cJSON *p) {
         cJSON_SetValuestring(GET(corner,"action"),actions[i][1]);
         assert(panel_schema_validate(p,NULL,0));
     }
+    cJSON_SetValuestring(GET(corner,"type"),"switch");
+    cJSON_SetValuestring(GET(corner,"action"),"trigger");
+    cJSON_AddStringToObject(corner,"inputUuid",target);expect_rejected(p);
+    cJSON_SetValuestring(GET(corner,"inputUuid"),m_plus);
+    assert(panel_schema_validate(p,NULL,0));
+    cJSON_SetValuestring(GET(corner,"type"),"pulse");expect_rejected(p);
+    cJSON_SetValuestring(GET(corner,"inputUuid"),"");assert(panel_schema_validate(p,NULL,0));
+    cJSON_DeleteItemFromObjectCaseSensitive(corner,"inputUuid");
+    cJSON_SetValuestring(GET(corner,"type"),"lighting");
+    cJSON_SetValuestring(GET(corner,"action"),"scene");
+    cJSON *switch_corner=cJSON_GetArrayItem(GET(touch,"corners"),1);
+    cJSON_SetValuestring(GET(switch_corner,"type"),"switch");
+    cJSON_SetValuestring(GET(switch_corner,"action"),"trigger");
+    cJSON_SetValuestring(GET(switch_corner,"uuid"),target);
+    cJSON_AddStringToObject(switch_corner,"inputUuid",m_plus);
     cJSON_SetNumberValue(GET(corner,"sceneId"),2147483647);
     assert(panel_schema_validate(p,NULL,0));
     cJSON_SetNumberValue(GET(corner,"sceneId"),2147483648.0);
@@ -81,6 +96,8 @@ static void assert_configured(cJSON *p) {
     assert(cJSON_IsTrue(GET(t,"enabled")) && GET(t,"tapWindowMs")->valueint==375);
     assert(!strcmp(str(c,"type"),"lighting") && !strcmp(str(c,"action"),"scene"));
     assert(GET(c,"sceneId")->valueint==104 && !strcmp(str(c,"uuid"),target));
+    const cJSON *sw=cJSON_GetArrayItem(GET(t,"corners"),1);
+    assert(!strcmp(str(sw,"type"),"switch") && !strcmp(str(sw,"inputUuid"),m_plus));
     assert(!strcmp(str(GET(t,"center"),"uuid"),target) && !strcmp(str(GET(t,"center"),"inputUuid"),m_plus));
 }
 /* The legacy fixture has the same envelope as SD files made before touch existed. */
