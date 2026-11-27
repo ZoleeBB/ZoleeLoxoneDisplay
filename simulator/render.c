@@ -42,6 +42,16 @@ static void tap(int x,int y)
     pointer.state=LV_INDEV_STATE_RELEASED;step(350);
 }
 
+static bool has_label(lv_obj_t *parent,const char *text)
+{
+    if (lv_obj_has_flag(parent,LV_OBJ_FLAG_HIDDEN)) return false;
+    if (lv_obj_check_type(parent,&lv_label_class) && !strcmp(lv_label_get_text(parent),text)) return true;
+    for (unsigned i=0;i<lv_obj_get_child_count(parent);i++) {
+        if (has_label(lv_obj_get_child(parent,i),text)) return true;
+    }
+    return false;
+}
+
 static void snapshot(const char *name)
 {
     char path[512];
@@ -76,8 +86,10 @@ int main(int argc,char **argv)
     snapshot("wifi-networks");
     tap(200,224);
     step(650);
+    assert(has_label(lv_screen_active(),"Wi-Fi-jelszó"));
     snapshot("wifi-password");
     fixture_online=true;step(600);
+    assert(has_label(lv_screen_active(),"http://192.168.1.42"));
     snapshot("setup-ip");
     fixture_complete=true;fixture_assets=true;fixture_generation++;step(800);
     assert(fixture_page==0 && fixture_brightness==80);
@@ -89,6 +101,7 @@ int main(int argc,char **argv)
     tap(100,210);assert(fixture_calls==2);
     tap(615,115);step(300);
     tap(180,361);step(300);
+    assert(has_label(lv_screen_active(),"RGBW hangulatfény"));
     snapshot("lighting-outputs");
     tap(669,59);
     tap(450,42);assert(fixture_page==2);
@@ -99,6 +112,7 @@ int main(int argc,char **argv)
     pointer.point=(lv_point_t){490,400};pointer.state=LV_INDEV_STATE_PRESSED;step(100);
     for (int x=480;x>=220;x-=15) {pointer.point.x=x;step(30);}
     pointer.state=LV_INDEV_STATE_RELEASED;step(650);
+    assert(has_label(lv_screen_active(),"Mai összesítő"));
     snapshot("energy-daily");
     step(9000);
     assert(fixture_brightness==10 && fixture_page==-1);

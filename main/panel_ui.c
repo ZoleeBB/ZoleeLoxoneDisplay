@@ -101,7 +101,7 @@ static void open_tab(unsigned index)
     energy_page=!strcmp(str(t,"kind"),"energy");
     body=panel_box(screen,0,80,720,640,0x101316,0);
     if (energy_page) {
-        panel_energy_open(body);
+        panel_energy_open(body,generation);
         panel_energy_update(index,night,clock_text);
         return;
     }
@@ -162,7 +162,7 @@ static void rest(void)
     lv_obj_set_style_bg_opa(saver_layer,LV_OPA_TRANSP,0);
     lv_obj_add_flag(saver_layer,LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(saver_layer,wake_event,LV_EVENT_PRESSED,NULL);
-    clock_label=panel_label(saver_layer,clock_text,0,0,&app_font_numbers_96,0x8B8C8E);
+    clock_label=panel_label(saver_layer,clock_text,0,0,&app_font_numbers_132,0x8B8C8E);
     lv_obj_center(clock_label);
     illuminate(number(display,"nightBrightness",10));
 }

@@ -23,6 +23,7 @@ static int last_night, last_weather;
 static uint32_t last_tick, last_read;
 static lx_values_t values;
 static bool available;
+static unsigned mapping_revision;
 
 static int scaled(int value)
 {
@@ -114,8 +115,9 @@ static lv_obj_t *label(const char *text, int x, int y, int width, const lv_font_
     return obj;
 }
 
-void panel_energy_open(lv_obj_t *parent)
+void panel_energy_open(lv_obj_t *parent, unsigned config_revision)
 {
+    mapping_revision=config_revision;
     root = panel_box(parent, 40, 0, 640, 640, 0x071D32, 0);
     background = icon(NULL, 0, 0, 720);
     for (int i = 0; i < 4; ++i) {
@@ -203,7 +205,7 @@ void panel_energy_update(unsigned tab, bool night, const char *clock)
     }
     if (now-last_read >= 400) {
         last_read = now;
-        available = zld_loxone_energy(tab, &values);
+        available = zld_loxone_energy_at(tab, mapping_revision, &values);
     }
     if (last_night != (int)night) {
         last_night = night;
@@ -260,5 +262,5 @@ void panel_energy_update(unsigned tab, bool night, const char *clock)
                                       "energy/weather_rain.png","energy/weather_sun.png","energy/weather_partly.png"};
     if (icon_id != last_weather) { panel_image(weather, icons[icon_id]); last_weather = icon_id; }
     panel_text(clock_label, clock);
-    panel_text(message, available ? "" : "Miniserver-adatokra vár…");
+    panel_text(message, available ? "" : "Miniserver-adatokra vár...");
 }

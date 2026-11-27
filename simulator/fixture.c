@@ -123,9 +123,9 @@ bool app_loxone_light_circuit(unsigned handle,unsigned i,lx_light_circuit_t *out
 }
 esp_err_t app_loxone_light_set(unsigned handle,unsigned i,const lx_light_value_t *v)
 {(void)handle;(void)i;(void)v;fixture_calls++;return ESP_OK;}
-bool zld_loxone_energy(unsigned tab,lx_values_t *v)
+bool zld_loxone_energy_at(unsigned tab,unsigned revision,lx_values_t *v)
 {
-    (void)tab;*v=(lx_values_t){.value={-.7,-1.3,3.8,1.8,78,1,0,25,15.4,8,1,0}};
+    (void)tab;(void)revision;*v=(lx_values_t){.value={-.7,-1.3,3.8,1.8,78,1,0,25,15.4,8,1,0}};
     for (int i=0;i<12;i++) v->seen[i]=true;
     v->seen[18]=true;v->value[18]=60;return true;
 }

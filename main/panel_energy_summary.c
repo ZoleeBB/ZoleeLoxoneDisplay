@@ -79,7 +79,7 @@ void panel_summary_sync(unsigned tab,bool night)
     panel_daily_t t={0};
     bool live=false;
     bool ok=panel_energy_stats_read(tab,panel_config_generation(),&t,&live);
-    panel_text(status, !ok ? "A mai első mérési időszakra vár…" :
+    panel_text(status, !ok ? "A mai első mérési időszakra vár..." :
                 live ? "A kijelző által ma mért időszakok" : "Utolsó ismert mai adat · megszakadt a kapcsolat");
     char s[72],d[76];
     double local=t.pv_home+t.bat_home;

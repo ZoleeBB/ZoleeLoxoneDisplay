@@ -8,6 +8,7 @@ LV_FONT_DECLARE(app_font_24);
 LV_FONT_DECLARE(app_font_28);
 LV_FONT_DECLARE(app_font_34);
 LV_FONT_DECLARE(app_font_numbers_96);
+LV_FONT_DECLARE(app_font_numbers_132);
 
 lv_obj_t *panel_box(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color, int radius);
 lv_obj_t *panel_label(lv_obj_t *parent, const char *text, int x, int y,
