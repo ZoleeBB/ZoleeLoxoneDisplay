@@ -7,3 +7,5 @@ label.field{display:flex;flex-direction:column;gap:7px;min-width:0}.caption{font
 #pickCategory:not([hidden]){display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
 #pickCategory button{border-radius:20px;padding:.35rem .85rem;font-size:.9rem}
 #pickCategory [aria-pressed=true]{border-color:var(--lime);background:var(--lime);color:#192319}
+
+audio{width:min(100%,430px)}

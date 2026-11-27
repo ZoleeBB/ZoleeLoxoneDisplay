@@ -266,22 +266,111 @@ function renderDisplay(){
     input(night,'Éjszaka kezdete',d,'nightStart','time'); input(night,'Éjszaka vége',d,'nightEnd','time');
   } else night.append(field('Éjszakai mód állapota',mappingInput(d,'nightUuid',app.controls,'uuid')));
 }
+function renderRingtones(config){
+  const btn=button('Csengőhangcsomag letöltése',download),p=panel('Csengőhangok',btn),g=grid(p);
+  const chooser=el('select'), muted=el('option','','Néma');
+  muted.value='';chooser.append(muted);
+  g.append(field('Csengőhang',chooser),check('Csengőhang ismétlése',config,'ringtoneRepeat'));
+  const hint=el('p','hint');hint.setAttribute('role','status');hint.setAttribute('aria-live','polite');p.append(hint);
+  const preview=el('audio'),sample=el('div','span');
+  const play=button('Hangminta lejátszása',async()=>{
+    const name=previewName;
+    if(!name)return;
+    preview.src='/api/ringtones/preview?name='+encodeURIComponent(name);
+    preview.hidden=false;play.hidden=true;
+    try{await preview.play();}
+    catch{
+      if(name===previewName && sample.isConnected){
+        hint.classList.add('error');hint.textContent='A hangminta nem játszható le.';
+        play.hidden=false;preview.hidden=true;
+      }
+    }
+  });
+  preview.controls=true;preview.preload='none';preview.hidden=true;
+  preview.setAttribute('aria-label','A kiválasztott csengőhang lejátszója');
+  sample.append(el('p','caption','Hangminta ezen az eszközön'),play,preview);g.append(sample);
+  let playable=new Set(),previewName='';
+  function refreshPreview(){
+    const name=playable.has(config.ringtone)?config.ringtone:'';
+    sample.hidden=!name;
+    if(previewName===name)return;
+    previewName=name;preview.pause();
+    if(preview.hasAttribute('src')){preview.removeAttribute('src');preview.load();}
+    play.hidden=false;preview.hidden=true;
+  }
+  chooser.onchange=()=>{config.ringtone=chooser.value;changed();refreshPreview();};
+  // Until the SD catalog arrives, preserve a saved selection, including custom filenames.
+  function setChoices(items){
+    const options=[muted];
+    const names=new Set(['']);
+    for(const item of items){
+      if(!item.name || names.has(item.name)) continue;
+      const opt=el('option','',item.label||item.name);opt.value=item.name;
+      options.push(opt);names.add(item.name);
+    }
+    if(config.ringtone && !names.has(config.ringtone)){
+      const opt=el('option','',config.ringtone+' (mentett)');opt.value=config.ringtone;options.push(opt);
+    }
+    playable=names;
+    const old=Array.from(chooser.options);
+    if(old.length!==options.length || options.some((opt,i)=>old[i].value!==opt.value || old[i].text!==opt.text))
+      chooser.replaceChildren(...options);
+    chooser.value=config.ringtone;refreshPreview();
+  }
+  let loading=false;
+  async function load(){
+    if(loading || !p.isConnected) return;
+    loading=true;btn.disabled=true;
+    try{
+      const state=await getJSON('/api/ringtones');
+      if(!p.isConnected) return;
+      setChoices(state.items||[]);
+      const running=state.status==='downloading',failed=state.status==='error';
+      const mib=n=>(Number(n)/1048576).toLocaleString('hu-HU',{maximumFractionDigits:1});
+      const count=Number(state.total)>0?' ('+mib(state.completed)+' / '+mib(state.total)+' MiB)':'';
+      const version=state.version?' · '+state.version:'';
+      hint.classList.toggle('error',failed);
+      hint.textContent=running?'A kijelző a csengőhangokat tölti le…'+count:
+        failed?(state.message||'A csengőhangcsomag letöltése sikertelen.') :
+        state.status==='ready'?'Telepített csengőhangok: '+(state.items||[]).length+version:
+        'A kijelző a Zolee Energy Flow Display hangcsomagját közvetlenül az SD-kártyára tölti.';
+      btn.textContent=running?'Letöltés folyamatban…':state.status==='ready'?'Csengőhangcsomag frissítése':'Csengőhangcsomag letöltése';
+      btn.disabled=running;
+      if(running)setTimeout(load,1000);
+    }catch(e){
+      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;btn.disabled=false;}
+    }finally{loading=false;}
+  }
+  async function download(){
+    if(btn.disabled) return;
+    btn.disabled=true;hint.classList.remove('error');hint.textContent='Letöltés indítása…';
+    try{
+      const response=await fetch('/api/ringtones/download',{method:'POST',headers:{'X-Panel-Request':'1'}});
+      if(!response.ok)throw Error(await response.text());
+      await load();
+    }catch(e){
+      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;btn.disabled=false;}
+    }
+  }
+  setChoices([{name:'tubular-chime.wav',label:'Csőharang'}]);load();
+}
 function renderIntercom(){
   const o=app.profile.intercom,p=panel('Kaputelefon'),g=grid(p);
   g.append(check('Kaputelefon engedélyezése',o,'enabled',render));
-  if(!o.enabled)return;
-  input(g,'Kamera MJPEG-címe',o,'cameraUrl','url',{maxlength:256,placeholder:'http://192.168.1.50/mjpg/video.mjpg'});
-  input(g,'Kamera felhasználóneve',o,'cameraUser','text',{maxlength:95}); secret(g,'Kamera jelszava','cameraPassword');
-  g.append(field('Csengetés folyamatban',mappingInput(o,'uuid',app.controls,'uuid')),
-    field('Kapunyitó parancs (opcionális)',mappingInput(o,'gateUuid',app.controls.filter(r=>eligible('pulse',r)),'control_uuid')));
-  input(g,'Hangszóró hangereje (%)',o,'speakerVolume','number',{min:0,max:100});
-  input(g,'Mikrofon erősítése (%)',o,'microphoneGain','number',{min:0,max:100});
-  const tones={'':'Néma','tubular-chime.wav':'Csőharang'};
-  if(o.ringtone && !tones[o.ringtone]) tones[o.ringtone]=o.ringtone;
-  g.append(field('Csengőhang',select(o,'ringtone',tones)),check('Csengőhang ismétlése',o,'ringtoneRepeat'));
+  if(o.enabled){
+    input(g,'Kamera MJPEG-címe',o,'cameraUrl','url',{maxlength:256,placeholder:'http://192.168.1.50/mjpg/video.mjpg'});
+    input(g,'Kamera felhasználóneve',o,'cameraUser','text',{maxlength:95}); secret(g,'Kamera jelszava','cameraPassword');
+    g.append(field('Csengetés folyamatban',mappingInput(o,'uuid',app.controls,'uuid')),
+      field('Kapunyitó parancs (opcionális)',mappingInput(o,'gateUuid',app.controls.filter(r=>eligible('pulse',r)),'control_uuid')));
+    input(g,'Hangszóró hangereje (%)',o,'speakerVolume','number',{min:0,max:100});
+    input(g,'Mikrofon erősítése (%)',o,'microphoneGain','number',{min:0,max:100});
+  }
+  renderRingtones(o);
 }
 function render(){
   if(!app.profile)return;
+  const preview=editor.querySelector('audio');
+  if(preview){preview.pause();preview.removeAttribute('src');preview.load();}
   lists=new Map(); editor.replaceChildren();
   for(const b of document.querySelectorAll('[data-section]')){
     if(b.dataset.section===app.section)b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');

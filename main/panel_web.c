@@ -1,4 +1,5 @@
 #include "panel_web.h"
+#include "app_ringtone_wav.h"
 #include "panel_config.h"
 #include "zld_loxone.h"
 #include "zld_update.h"
@@ -143,6 +144,20 @@ static bool asset_name(const char *s,size_t n) {
         if(!(s[i]>='a'&&s[i]<='z') && !(s[i]>='0'&&s[i]<='9') && s[i]!='-') return false;
     return true;
 }
+static esp_err_t stream_file(httpd_req_t *r,const char *path,const char *type,const char *cache) {
+    FILE *f=fopen(path,"rb");
+    if(!f) return reply(r,"404 Not Found","A fájl nem olvasható.");
+    char chunk[1536];
+    httpd_resp_set_type(r,type);
+    httpd_resp_set_hdr(r,"Cache-Control",cache);
+    esp_err_t rc=ESP_OK;
+    size_t n;
+    while((n=fread(chunk,1,sizeof(chunk),f))>0 && rc==ESP_OK)
+        rc=httpd_resp_send_chunk(r,chunk,(ssize_t)n);
+    if(ferror(f)) rc=ESP_FAIL;
+    fclose(f);
+    return rc==ESP_OK?httpd_resp_send_chunk(r,NULL,0):rc;
+}
 static esp_err_t asset_get(httpd_req_t *r) {
     if(!panel_web_authorize(r,false)) return ESP_OK;
     const char *logical=r->uri+strlen("/assets/");
@@ -156,18 +171,17 @@ static esp_err_t asset_get(httpd_req_t *r) {
     }
     char path[256];
     if(!zld_asset_path(logical,path,sizeof(path))) return reply(r,"404 Not Found","A képcsomag még nincs telepítve.");
-    FILE *f=fopen(path,"rb");
-    if(!f) return reply(r,"404 Not Found","A fájl nem olvasható.");
-    char chunk[1536];
-    httpd_resp_set_type(r,type);
-    httpd_resp_set_hdr(r,"Cache-Control","no-cache");
-    esp_err_t rc=ESP_OK;
-    size_t n;
-    while((n=fread(chunk,1,sizeof(chunk),f))>0 && rc==ESP_OK)
-        rc=httpd_resp_send_chunk(r,chunk,(ssize_t)n);
-    if(ferror(f)) rc=ESP_FAIL;
-    fclose(f);
-    return rc==ESP_OK?httpd_resp_send_chunk(r,NULL,0):rc;
+    return stream_file(r,path,type,"no-cache");
+}
+static esp_err_t ringtone_preview(httpd_req_t *r) {
+    if(!panel_web_authorize(r,false)) return ESP_OK;
+    char query[96],name[65],path[256];
+    if(httpd_req_get_url_query_str(r,query,sizeof(query))!=ESP_OK ||
+       httpd_query_key_value(query,"name",name,sizeof(name))!=ESP_OK || !app_ringtone_name(name))
+        return reply(r,"400 Bad Request","Érvénytelen csengőhangnév.");
+    if(!zld_ringtone_path(name,path,sizeof(path)))
+        return reply(r,"404 Not Found","A kiválasztott csengőhang nincs telepítve.");
+    return stream_file(r,path,"audio/wav","no-store");
 }
 httpd_handle_t panel_web_start(void) {
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();
@@ -187,6 +201,7 @@ httpd_handle_t panel_web_start(void) {
         {.uri="/api/controls",.method=HTTP_GET,.handler=controls_get},
         {.uri="/api/controls/refresh",.method=HTTP_POST,.handler=controls_refresh},
         {.uri="/api/controls/refresh",.method=HTTP_GET,.handler=controls_refresh},
+        {.uri="/api/ringtones/preview",.method=HTTP_GET,.handler=ringtone_preview},
         {.uri="/assets/*",.method=HTTP_GET,.handler=asset_get},
     };
     for(size_t i=0;i<sizeof(routes)/sizeof(*routes);i++) {

@@ -51,7 +51,7 @@ A **Kijelző** fülön külön állítható a nappali és az éjszakai fényerő
 
 A **Képernyőkímélő késleltetése** az utolsó érintéstől számított másodperc. Üres mező vagy `0` kikapcsolja. Pozitív értéknél a panel az éjszakai fényerőre vált, félkövér órát, halványított fülikonokat és egyszínű alsó márkafeliratot mutat. Az első érintés visszahozza az aktív lapot.
 
-A **Kaputelefon** fül külön engedélyezhető. Az induló hangjelzés **Csőharang**, a **Néma** opció kikapcsolja. A kapunyitás, a videó és a hang beállításai a [kaputelefon útmutatójában](kaputelefon.md) találhatók.
+A **Kaputelefon** fülön a **Csengőhangcsomag letöltése** gombbal telepítheted a Zolee Energy Flow Display projekt hangjait. A panel internetkapcsolatot használ, a fájlokat az SD-kártyára menti. A műveletet kikapcsolt kaputelefon mellett is elindíthatod. A telepítés után válassz hangot a **Csengőhang** listából. A **Hangminta ezen az eszközön** a böngészőt futtató telefonon vagy számítógépen szólal meg. Hallgasd meg a kiválasztott hangot, majd a panelhez a **Mentés** gombbal rögzítsd. Az alapértelmezett jelzés **Csőharang**, a **Néma** opció elnémítja a csengetést. A kapunyitás, a videó és a hang beállításai a [kaputelefon útmutatójában](kaputelefon.md) találhatók.
 
 ## Mentés és hozzáférés
 
