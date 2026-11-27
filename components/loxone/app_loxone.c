@@ -581,8 +581,17 @@ static void worker(void *arg)
             invalidate();
             xSemaphoreTake(s_lock, portMAX_DELAY);
             panel_profile_t *previous = s_profile;
+            /* Presentation-only saves may reuse the current JWT; changing
+             * server, TLS identity, user or password always discards it. */
+            bool same_login = previous && previous->connection.port == next->connection.port &&
+                previous->connection.tls == next->connection.tls &&
+                !strcmp(previous->connection.host, next->connection.host) &&
+                !strcmp(previous->connection.username, next->connection.username) &&
+                !strcmp(previous->connection.password, next->connection.password) &&
+                !strcmp(previous->connection.ca_pem, next->connection.ca_pem);
             s_profile = next;
             s_home = &next->home;
+            s_light_page = atomic_load(&s_requested_page);
             s_home_busy = uxQueueMessagesWaiting(s_requests) != 0;
             s_home_revision++;
             s_intercom_generation++;
@@ -591,7 +600,7 @@ static void worker(void *arg)
             s_catalog = NULL;
             xSemaphoreGive(s_lock);
             release_profile(previous);
-            mbedtls_platform_zeroize(token, sizeof(token));
+            if (!same_login) mbedtls_platform_zeroize(token, sizeof(token));
             failures = 0;
         }
         const lx_config_t *active = &s_profile->connection;

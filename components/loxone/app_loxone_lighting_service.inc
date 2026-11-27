@@ -19,6 +19,7 @@ typedef struct
 } light_page_t;
 
 static int s_light_page = -1;
+static atomic_int s_requested_page = -1;
 static unsigned s_light_generation = 1, s_light_built_generation, s_light_built_revision;
 static unsigned s_light_next_handle, s_light_modal, s_light_modal_card, s_light_detail_handle;
 static unsigned s_light_send_cursor;
@@ -91,14 +92,15 @@ static void lighting_invalidate_locked(void)
 
 void app_loxone_home_visible(int page)
 {
-    if (!s_lock || !s_home)
-        return;
+    if (page < 0 || page >= LX_HOME_MAX_PAGES) page = -1;
+    /* The editor and UI may publish the new tab set before its profile
+     * reaches the worker. Retain the user's current selection across that gap. */
+    atomic_store(&s_requested_page, page);
+    if (!s_lock) return;
     light_page_t *old = NULL;
     lx_light_block_t *old_detail = NULL;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    unsigned first, count;
-    if (page < 0 || !lx_home_page_range(s_home, (unsigned)page, &first, &count))
-        page = -1;
+    page = atomic_load(&s_requested_page);
     if (page != s_light_page)
     {
         app_loxone_audio_hide();
