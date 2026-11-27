@@ -148,6 +148,7 @@ static void wake(void)
     lv_obj_delete(saver_layer);
     saver_layer = clock_label = NULL;
     saver = false;
+    lv_obj_remove_flag(tabs_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_opa(tabs_bar, LV_OPA_COVER, 0);
     lv_display_trigger_activity(lv_display_get_default());
     open_tab(active_tab);
@@ -177,8 +178,13 @@ static void standby_brand(lv_obj_t *layer, bool touch_enabled)
     lv_obj_set_flex_flow(line, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(line, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(line, 7, 0);
-    /* A hatszög keskenyedő alján a szójel minden betűje a két vonal közé fér. */
-    lv_obj_align(line, LV_ALIGN_BOTTOM_MID, 0, touch_enabled ? -58 : -26);
+    if (touch_enabled) {
+        lv_obj_set_style_bg_color(line, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
+        lv_obj_set_style_pad_left(line, 8, 0);
+        lv_obj_set_style_pad_right(line, 8, 0);
+    }
+    lv_obj_align(line, LV_ALIGN_BOTTOM_MID, 0, -26);
 
     panel_label(line, "Zolee", 0, 0, &app_font_24, standby_ink);
     lv_obj_t *mark = lv_image_create(line);
@@ -201,16 +207,18 @@ static void rest(void)
         lv_obj_delete(body);
     body = NULL;
     energy_page = false;
-    lv_obj_set_style_opa(tabs_bar, LV_OPA_30, 0);
     saver_layer = panel_box(screen, 0, 0, 720, 720, 0, 0);
-    lv_obj_set_style_bg_opa(saver_layer, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(saver_layer, LV_OBJ_FLAG_CLICKABLE);
     const cJSON *touch = get(profile, "touch");
     bool touch_enabled = cJSON_IsTrue(get(touch, "enabled"));
-    if (touch_enabled)
+    if (touch_enabled) {
+        lv_obj_add_flag(tabs_bar, LV_OBJ_FLAG_HIDDEN);
         panel_touch_open(saver_layer, generation, (unsigned)number(touch, "tapWindowMs", 400), wake);
-    else
+    } else {
+        lv_obj_set_style_opa(tabs_bar, LV_OPA_30, 0);
+        lv_obj_set_style_bg_opa(saver_layer, LV_OPA_TRANSP, 0);
         lv_obj_add_event_cb(saver_layer, wake_event, LV_EVENT_PRESSED, NULL);
+    }
     clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_standby_132,
                               night_confirmed ? standby_night_ink : standby_ink);
     lv_obj_center(clock_label);

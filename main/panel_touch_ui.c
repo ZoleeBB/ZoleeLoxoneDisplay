@@ -6,7 +6,7 @@
 #include <stdlib.h>
 
 enum {
-    SIDE = 720, MID = SIDE / 2, WING_TIP = 46, WING_END = 274,
+    SIDE = 720, MID = SIDE / 2,
     UNLOCK_HEIGHT = 52, UNLOCK_HALF_WIDTH = 112, UNLOCK_RISE = 90, UNLOCK_DRIFT = 60,
     TAP_DRIFT = 24, TAP_HOLD_MS = 600
 };
@@ -29,31 +29,23 @@ static bool on_unlock_rail(lv_point_t p)
 
 static unsigned zone_at(lv_point_t p)
 {
-    int left = WING_TIP + (WING_END - WING_TIP) * abs(p.y - MID) / MID;
-    if (p.x < left) return p.y < MID ? TOP_LEFT : BOTTOM_LEFT;
-    if (p.x >= SIDE - left) return p.y < MID ? TOP_RIGHT : BOTTOM_RIGHT;
-    return CENTER;
-}
-
-static void line(lv_obj_t *layer, const lv_point_precise_t *path, unsigned count)
-{
-    lv_obj_t *stroke = lv_line_create(layer);
-    lv_line_set_points(stroke, path, count);
-    lv_obj_set_style_line_color(stroke, lv_color_hex(0x191B1D), 0);
-    lv_obj_set_style_line_width(stroke, 2, 0);
-    lv_obj_remove_flag(stroke, LV_OBJ_FLAG_CLICKABLE);
+    if (abs(p.x - MID) + abs(p.y - MID) <= MID)
+        return CENTER;
+    if (p.y < MID)
+        return p.x < MID ? TOP_LEFT : TOP_RIGHT;
+    return p.x < MID ? BOTTOM_LEFT : BOTTOM_RIGHT;
 }
 
 static void draw_boundaries(lv_obj_t *layer)
 {
-    static const lv_point_precise_t left[] = {{WING_END, 0}, {WING_TIP, MID}, {WING_END, SIDE}};
-    static const lv_point_precise_t right[] = {{SIDE-WING_END, 0}, {SIDE-WING_TIP, MID}, {SIDE-WING_END, SIDE}};
-    static const lv_point_precise_t left_split[] = {{0, MID}, {WING_TIP, MID}};
-    static const lv_point_precise_t right_split[] = {{SIDE-WING_TIP, MID}, {SIDE, MID}};
-    line(layer, left, 3);
-    line(layer, right, 3);
-    line(layer, left_split, 2);
-    line(layer, right_split, 2);
+    static const lv_point_precise_t diamond[] = {
+        {MID, 0}, {SIDE, MID}, {MID, SIDE}, {0, MID}, {MID, 0}
+    };
+    lv_obj_t *stroke = lv_line_create(layer);
+    lv_line_set_points(stroke, diamond, sizeof(diamond) / sizeof(diamond[0]));
+    lv_obj_set_style_line_color(stroke, lv_color_hex(0x171717), 0);
+    lv_obj_set_style_line_width(stroke, 1, 0);
+    lv_obj_remove_flag(stroke, LV_OBJ_FLAG_CLICKABLE);
     panel_box(layer, MID - 52, 704, 104, 5, 0x515356, 3);
 }
 
