@@ -160,7 +160,7 @@ void app_main(void)
         bool ready = zld_assets_ready();
         panel_intercom_media_tick(intercom && ready);
         int64_t now = esp_timer_get_time();
-        if (ready && now >= next_sample) {
+        if (now >= next_sample) {
             next_sample = now + 1000000;
             panel_energy_stats_tick();
         }
