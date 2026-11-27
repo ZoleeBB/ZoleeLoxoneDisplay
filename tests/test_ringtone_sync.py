@@ -54,6 +54,19 @@ class RingtoneSync(unittest.TestCase):
                 selected = next(s["file"] for s in sounds if s["file"] != "tubular-chime.wav")
                 (work/"selected.wav").write_bytes(z.read(selected))
                 (work/"bundled.wav").write_bytes(z.read("tubular-chime.wav"))
+            for variant in range(1,4):
+                with zipfile.ZipFile(bundle) as original, zipfile.ZipFile(work / f"variant{variant}.zip","w",zipfile.ZIP_DEFLATED) as new:
+                    for entry in original.namelist():
+                        if entry == selected and variant == 3:
+                            continue
+                        data = original.read(entry)
+                        if entry == "ringtone.json":
+                            doc = json.loads(data)
+                            doc["generation_test"] = variant
+                            if variant == 3:
+                                doc["sounds"] = [row for row in doc["sounds"] if row["file"] != selected]
+                            data = json.dumps(doc).encode()
+                        new.writestr(entry, data)
             name = "ZoleeEnergyFlowDisplay-v4.0.0-ringtones.zip"
             sums = work/"SHA256SUMS.txt"
             sums.write_text(hashlib.sha256(bundle.read_bytes()).hexdigest()+"  "+name+"\n")

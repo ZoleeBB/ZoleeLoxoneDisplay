@@ -5,6 +5,7 @@
 #include "door_ringtone.h"
 #include <assert.h>
 #include <errno.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -60,6 +61,16 @@ static void request_upload(const char *data,size_t n,size_t avail,const char *ex
     assert(uploader && uploader(&r)==0 && !strncmp(r.status,expected,3) && !held);
 }
 
+static void import_file(const char *name) {
+    FILE *f=fopen(name,"rb"); assert(f);fseek(f,0,SEEK_END);size_t n=ftell(f);rewind(f);
+    char *bytes=malloc(n);assert(bytes && fread(bytes,1,n,f)==n);fclose(f);
+    request_upload(bytes,n,n,"200");free(bytes);
+}
+static int generations(void) {
+    DIR *d=opendir(TONE_ROOT);assert(d);struct dirent *e;int n=0;
+    while((e=readdir(d))) if(strlen(e->d_name)==64) ++n;
+    closedir(d);return n;
+}
 static void list_count(int expected,bool installed) {
     char tag[32];cJSON *list=tone_list(tag);
     assert(list && cJSON_GetArraySize(list)==expected);
@@ -93,7 +104,18 @@ int main(int argc,char **argv) {
         request_upload(raw,n,n,"200");listen(selected);
         char tag[32];cJSON *items=tone_list(tag);
         assert(!strcmp(tag,"Helyi csomag") && cJSON_GetArraySize(items)==expected);cJSON_Delete(items);
-        raw[0]=0;request_upload(raw,n,n,"400");listen(selected);free(raw);return 0;
+        raw[0]=0;request_upload(raw,n,n,"400");listen(selected);free(raw);
+        assert(generations()==1);
+        import_file("variant1.zip");import_file("variant2.zip");assert(generations()==2);
+        char active_wav[256],bak_wav[256];
+        assert(tone_resolve(selected,active_wav,sizeof(active_wav)));
+        assert(!unlink(active_wav));listen(selected);
+        assert(tone_resolve(selected,bak_wav,sizeof(bak_wav)) && strcmp(active_wav,bak_wav));
+        char *leaf=strrchr(active_wav,'/');assert(leaf);strcpy(leaf+1,"index.json");
+        assert(!unlink(active_wav));listen(selected); /* missing active catalog => verified backup */
+        import_file("variant3.zip");assert(generations()==2);
+        assert(!tone_resolve(selected,bak_wav,sizeof(bak_wav))); /* intentionally removed */
+        return 0;
     }
     assert(!mkdir("card",0777));assert(!mkdir("card/zld",0777));
     list_count(1,false);
