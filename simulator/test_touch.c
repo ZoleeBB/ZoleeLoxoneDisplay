@@ -121,6 +121,21 @@ static void groups(unsigned window)
     expect(CENTER, 1);
 }
 
+static void between_zones(void)
+{
+    contact(360, 360);
+    step(30);
+    contact(100, 130);
+    assert(fixture_touch_count == consumed + 2);
+    const fixture_touch_event_t *center = &fixture_touch_trace[consumed++];
+    assert(center->zone == CENTER && center->taps == 1 && center->session == fixture_session);
+    expect(TL, 1);
+    contact(100, 130);
+    expect(TL, 1);
+    step(fixture_tap_window + 60);
+    quiet();
+}
+
 static void canceled_drags(void)
 {
     /* Egy korábbi érvényes középső koppintás se fusson le a megszakított sor végén. */
@@ -221,6 +236,7 @@ void test_touch_saver(void)
     groups(150);
     groups(400);
     groups(1000);
+    between_zones();
     canceled_drags();
     interruptions();
 
