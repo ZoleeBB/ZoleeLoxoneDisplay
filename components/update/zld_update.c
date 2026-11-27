@@ -398,6 +398,7 @@ static void download_card(void *unused)
     for (size_t i = 0; ok && i < ACTIVE_COUNT; ++i) {
         atomic_store(&cloud_position, i + 1);
         if (!blob_ok(&active_entries[i])) {
+            atomic_store(&ready, false);
             ok = download_entry(client, &transfer, &active_entries[i]);
             if (!ok) {
                 vTaskDelay(pdMS_TO_TICKS(1000));

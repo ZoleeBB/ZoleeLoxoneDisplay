@@ -14,7 +14,7 @@
 typedef int esp_err_t;
 #define BOARD_SKU 31416
 #define BOARD_SILICON "rev1"
-#define ZLD_SOURCE_REV ""
+#define ZLD_SOURCE_REV "1111111111111111111111111111111111111111"
 #define ZLD_CARD_DIR "card"
 
 typedef SHA256_CTX mbedtls_sha256_context;
@@ -102,13 +102,24 @@ typedef struct {
 } esp_http_client_config_t;
 #define HTTP_EVENT_ON_DATA 1
 #define esp_crt_bundle_attach NULL
-#define esp_http_client_set_url(c,u) (0)
-#define esp_http_client_perform(c) (-1)
-#define esp_http_client_get_status_code(c) (503)
-#define esp_http_client_init(c) (NULL)
+static esp_http_client_config_t test_client;
+static unsigned test_download_count;
+static bool test_bad_remote;
+static void *esp_http_client_init(const esp_http_client_config_t *cfg) { test_client=*cfg; return &test_client; }
+static int esp_http_client_set_url(void *c,const char *url) {
+    assert(strstr(url,"raw.githubusercontent.com/ZoleeBB/ZoleeLoxoneDisplay/" ZLD_SOURCE_REV "/sdcard/icons/a.png"));
+    return 0;
+}
+static int esp_http_client_perform(void *c) {
+    ++test_download_count;
+    esp_http_client_event_t event={.event_id=HTTP_EVENT_ON_DATA,.data_len=1,
+        .data=test_bad_remote?"X":"A",.user_data=test_client.user_data};
+    return test_client.event_handler(&event);
+}
+#define esp_http_client_get_status_code(c) (200)
 #define esp_http_client_cleanup(c) ((void)0)
 #define pdMS_TO_TICKS(ms) (ms)
 #define vTaskDelay(t) ((void)0)
 #define pdPASS 1
-#define xTaskCreate(f,n,s,a,p,h) (0)
+#define xTaskCreate(f,n,s,a,p,h) ((f)(a),pdPASS)
 #define vTaskDelete(t) ((void)0)

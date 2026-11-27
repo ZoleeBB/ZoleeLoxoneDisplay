@@ -31,6 +31,15 @@ int main(void) {
     r=request("A",1,ZLD_GENERATION); r.index="0"; response(asset,&r,"200");
     r=request("",0,ZLD_GENERATION); response(seed,&r,"200"); assert(zld_assets_ready());
     assert(zld_asset_path("icons/a.png",path,sizeof(path)) && access(path,R_OK)==0);
+    assert(unlink(path)==0);
+    test_bad_remote=true;
+    r=request("",0,ZLD_GENERATION); response(fetch_card,&r,"202");
+    assert(test_download_count==2 && !zld_assets_ready() && atomic_load(&cloud_state)==CLOUD_ERROR);
+    test_bad_remote=false;
+    r=request("",0,ZLD_GENERATION); response(fetch_card,&r,"202");
+    assert(test_download_count==3 && zld_assets_ready() && atomic_load(&cloud_state)==CLOUD_OK);
+    r=request("",0,ZLD_GENERATION); response(fetch_card,&r,"202");
+    assert(test_download_count==3);
     r=request(second,strlen(second),gen2); response(prepare,&r,"200"); assert(!strcmp(r.response,"1\n"));
     r=request("BBBB",4,gen2); r.available=2; r.index="1"; response(asset,&r,"503");
     r=request("",0,gen2); response(seed,&r,"409"); assert(zld_assets_ready());
