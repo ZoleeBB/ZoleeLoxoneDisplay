@@ -26,6 +26,8 @@ static const char *const types[] = {"value","pulse","switch","lighting","irc","s
     "dimmer","central-lighting","slider","timed-switch","window-monitor","gate","window","audio"};
 static const char *const icons[] = {"meter","switch","switch","light","thermostat","blinds",
     "light","light","settings","clock","home","gate","blinds","audio"};
+static lv_obj_t *climate_mode, *climate_icon, *climate_fraction;
+static int climate_direction;
 static lv_obj_t *container, *view, *primary, *secondary, *feedback, *range, *range_label;
 static lv_obj_t *items[VISIBLE_ROWS], *choice[LIST_ROWS], *choice_labels[LIST_ROWS], *pager[2];
 static const cJSON *blocks, *block;
@@ -99,6 +101,8 @@ static void close_detail(void)
     pager[0]=pager[1]=NULL;
     primary=secondary=range=range_label=feedback=NULL;
     editing=false;
+    climate_mode=climate_icon=climate_fraction=NULL;
+    climate_direction=-1;
     if (view) lv_obj_delete(view);
     view=NULL;
 }
@@ -244,6 +248,66 @@ static void command(const char *s,int x,int y,int w,int h,action_t a)
     actions[action_count++]=(command_t){button(s,x,y,w,h,a),a};
 }
 
+/* Transparent hit areas keep the setpoint controls quiet over either a photo or a solid color. */
+static void climate_step(int center, action_t direction)
+{
+    lv_obj_t *b=panel_box(view,center-54,462,108,108,ink,LV_RADIUS_CIRCLE);
+    lv_obj_add_flag(b,LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(b,LV_OPA_TRANSP,0);
+    lv_obj_set_style_bg_opa(b,LV_OPA_20,LV_STATE_PRESSED);
+    lv_obj_set_style_opa(b,LV_OPA_40,LV_STATE_DISABLED);
+    lv_obj_center(panel_box(b,0,0,36,3,ink,2));
+    if (direction==HIGHER) lv_obj_center(panel_box(b,0,0,3,36,ink,2));
+    lv_obj_add_event_cb(b,act,LV_EVENT_CLICKED,(void *)(intptr_t)direction);
+    actions[action_count++]=(command_t){b,direction};
+}
+
+static lv_obj_t *climate_row(int y,int height,int gap,lv_flex_align_t vertical)
+{
+    lv_obj_t *row=panel_box(view,16,y,688,height,0,0);
+    lv_obj_set_style_bg_opa(row,LV_OPA_TRANSP,0);
+    lv_obj_set_flex_flow(row,LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row,LV_FLEX_ALIGN_CENTER,vertical,LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row,gap,0);
+    return row;
+}
+
+static void build_climate(void)
+{
+    lv_obj_t *mode=climate_row(113,54,12,LV_FLEX_ALIGN_CENTER);
+    climate_icon=lv_image_create(mode);
+    lv_obj_set_size(climate_icon,36,36);
+    lv_image_set_inner_align(climate_icon,LV_IMAGE_ALIGN_STRETCH);
+    lv_obj_set_style_image_recolor(climate_icon,lv_color_hex(ink),0);
+    lv_obj_set_style_image_recolor_opa(climate_icon,LV_OPA_COVER,0);
+    climate_mode=panel_label(mode,"",0,0,&app_font_34,ink);
+
+    lv_obj_t *reading=climate_row(194,116,0,LV_FLEX_ALIGN_END);
+    primary=panel_label(reading,"--",0,0,&app_font_numbers_132,ink);
+    climate_fraction=panel_label(reading,"",0,0,&app_font_numbers_96,ink);
+    lv_obj_set_style_text_opa(climate_fraction,LV_OPA_80,0);
+
+    secondary=text_line(view,"",24,357,672,&app_font_28,ink,LV_TEXT_ALIGN_CENTER);
+    climate_step(266,LOWER);
+    climate_step(454,HIGHER);
+}
+
+static void update_climate_mode(lx_irc_direction_t direction)
+{
+    if ((int)direction==climate_direction) return;
+    climate_direction=(int)direction;
+    const char *icon="icons/thermostat.png", *caption="Szobahőmérséklet";
+    if (direction==LX_IRC_DIRECTION_HEATING) {
+        icon="icons/heating.png";
+        caption="Fűtés";
+    } else if (direction==LX_IRC_DIRECTION_COOLING) {
+        icon="icons/cooling.png";
+        caption="Hűtés";
+    }
+    visible(climate_icon,panel_image(climate_icon,icon));
+    panel_text(climate_mode,caption);
+}
+
 static void choose(lv_event_t *ev)
 {
     unsigned i=(unsigned)(uintptr_t)lv_event_get_user_data(ev);
@@ -320,9 +384,16 @@ static void rebuild(void)
         lv_obj_add_event_cb(b,select_event,LV_EVENT_CLICKED,(void *)(intptr_t)-1);
         title_x=93;
     }
-    text_line(view,str(block,"name"),title_x,20,kind==LIGHTING ? 460 : 700-title_x,
-              &app_font_28,ink,LV_TEXT_ALIGN_LEFT);
-    if (kind==LIGHTING) {
+    if (kind==IRC && cJSON_GetArraySize(blocks)==1) {
+        lv_obj_t *room=text_line(view,str(block,"name"),28,39,664,&app_font_24,ink,LV_TEXT_ALIGN_CENTER);
+        lv_obj_set_style_text_opa(room,LV_OPA_70,0);
+    } else {
+        text_line(view,str(block,"name"),title_x,20,kind==LIGHTING ? 460 : 700-title_x,
+                  &app_font_28,ink,LV_TEXT_ALIGN_LEFT);
+    }
+    if (kind==IRC) {
+        build_climate();
+    } else if (kind==LIGHTING) {
         command("Részletek",552,10,150,58,LIGHT_DETAIL);
         list_widgets(106,70);
     } else if (kind==MONITOR) {
@@ -338,12 +409,9 @@ static void rebuild(void)
         list_widgets(110,69);
     } else {
         primary=text_line(view,"—",20,185,680,
-             kind==IRC || kind==VALUE ? &app_font_numbers_96 : &app_font_34,ink,LV_TEXT_ALIGN_CENTER);
+             kind==VALUE ? &app_font_numbers_96 : &app_font_34,ink,LV_TEXT_ALIGN_CENTER);
         secondary=text_line(view,"",26,315,668,&app_font_28,ink,LV_TEXT_ALIGN_CENTER);
-        if (kind==IRC) {
-            command("-",174,480,168,92,LOWER);
-            command("+",378,480,168,92,HIGHER);
-        } else if (kind==SHADING || kind==GATE || kind==WINDOW) {
+        if (kind==SHADING || kind==GATE || kind==WINDOW) {
             command(kind==SHADING ? "Fel" : "Nyitás",25,415,210,78,UP);
             command("Stop",255,415,210,78,STOP);
             command(kind==SHADING ? "Le" : "Zárás",485,415,210,78,DOWN);
@@ -378,12 +446,30 @@ static bool describe(const cJSON *b,kind_t type,char *summary,size_t cap,char *e
     *extra=0;
     if (type==IRC) {
         lx_irc_summary_t s={0};
-        if (!app_loxone_irc_summary(id,rev,&s)) return false;
-        if (s.actual_valid) snprintf(summary,cap,"%.1f°",s.actual_c);
-        const char *mode=s.direction==LX_IRC_DIRECTION_HEATING ? "Fűtés" :
-                         s.direction==LX_IRC_DIRECTION_COOLING ? "Hűtés" : "Szobahőmérséklet";
-        if (s.target_valid) snprintf(extra,extra_cap,"%s  ·  Célhőmérséklet %.1f °C",mode,s.target_c);
-        else snprintf(extra,extra_cap,"%s",mode);
+        app_loxone_irc_summary(id,rev,&s);
+        if (full) update_climate_mode(s.direction);
+        /* Use one rounded value for both pieces, including negative temperatures near zero. */
+        char decimal[32]="";
+        if (s.actual_valid) {
+            snprintf(decimal,sizeof(decimal),"%.1f",s.actual_c);
+            char *point=strchr(decimal,'.');
+            if (point) *point=',';
+            if (full && point) {
+                char fraction[12];
+                snprintf(fraction,sizeof(fraction),",%c°",point[1]);
+                panel_text(climate_fraction,fraction);
+                *point=0;
+                snprintf(summary,cap,"%s",decimal);
+            } else snprintf(summary,cap,"%s°",decimal);
+        } else if (full) {
+            panel_text(climate_fraction,"");
+            snprintf(summary,cap,"--");
+        }
+        if (s.target_valid) {
+            snprintf(extra,extra_cap,"Célhőmérséklet   %.1f °C",s.target_c);
+            char *point=strchr(extra,'.');
+            if (point) *point=',';
+        }
         return s.controllable;
     }
     if (type==LIGHTING) {
