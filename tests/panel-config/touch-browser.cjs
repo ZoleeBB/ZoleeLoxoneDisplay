@@ -61,6 +61,7 @@ const profileWithoutTouch = {
     const touchTab=page.getByRole('button',{name:'Használat Touch-ként',exact:true});
     const save=page.getByRole('button',{name:'Mentés',exact:true});
     const toggle=page.getByRole('checkbox',{name:'Érintési zónák engedélyezése a képernyőkímélőn'});
+    const dayColor=page.getByLabel('Nappali szövegszín',{exact:true});
     const center=page.getByRole('combobox',{name:'Középső világításvezérlő',exact:true});
     const gap=page.getByRole('spinbutton',{name:'Koppintások közötti megengedett szünet (mp)'});
     const zones=page.locator('fieldset.touch-zone');
@@ -73,11 +74,20 @@ const profileWithoutTouch = {
     await page.goto('http://panel.test/');await touchTab.click();
     assert.equal(await zones.count(),4);assert.equal(await toggle.isChecked(),false);
     assert.equal(await gap.inputValue(),'0.4');assert.equal(writes,0);
+    assert.equal(await dayColor.inputValue(),'#8b8c8e');
+    assert.equal(await page.locator('input[type=color]').count(),1);
+    assert(await save.isDisabled());
+    profile.touch={enabled:false,tapWindowMs:400,corners:Array.from({length:4},empty),center:{uuid:'',inputUuid:''}};
     profile.display.saverSeconds=0;await page.reload();await touchTab.click();
+    assert.equal(await dayColor.inputValue(),'#8b8c8e');
     await page.getByRole('button',{name:'Kijelző beállításai'}).click();
     await page.getByRole('heading',{name:'Fényerő és képernyőkímélő'}).waitFor();
     profile.display.saverSeconds=15;await page.reload();await touchTab.click();
     await toggle.check();
+    await dayColor.fill('#a6b8c9');
+    await page.getByRole('button',{name:'Kijelző',exact:true}).click();
+    await touchTab.click();
+    assert.equal(await dayColor.inputValue(),'#a6b8c9');assert.equal(writes,0);
     await zoneField(0,'Funkció').selectOption('lighting');
     await save.click();await page.getByText('Bal felső sarok: válassz vezérlőt.').waitFor();
     assert.equal(writes,0);
@@ -97,7 +107,7 @@ const profileWithoutTouch = {
     await gap.fill('0.125');await save.click();assert.equal(writes,0);
     await gap.fill('0.425');await save.click();await page.getByText('Beállítások mentve az SD-kártyára.').waitFor();
     const valid=structuredClone(profile.touch);
-    assert.deepEqual(valid,{enabled:true,tapWindowMs:425,corners:[
+    assert.deepEqual(valid,{enabled:true,dayTextColor:'#a6b8c9',tapWindowMs:425,corners:[
       {type:'lighting',uuid:light,action:'scene',sceneId:8},{type:'audio',uuid:player,action:'volumeUp',sceneId:0},
       {type:'shading',uuid:centralBlind,action:'down',sceneId:0},{type:'pulse',uuid:pulse,action:'trigger',sceneId:0}],
       center:{uuid:light,inputUuid:''}});
@@ -123,14 +133,19 @@ const profileWithoutTouch = {
     profile.touch.corners[3]={...empty(),type:'switch',uuid:savedMissing,action:'trigger'};
     profile.touch.corners[0].sceneId=42;
     await page.reload();await touchTab.click();
+    assert.equal(await dayColor.inputValue(),'#a6b8c9');
     assert.equal(await zoneField(3,'Vezérlő').inputValue(),savedMissing);
     await page.getByText('A mentett világítási kép már nincs a blokk listájában. Válassz újat.').waitFor();
     assert.equal(await zoneField(0,'Világítási kép').inputValue(),'42');
     await zoneField(0,'Világítási kép').selectOption('4');
     assert.equal(await page.getByText('A mentett világítási kép már nincs a blokk listájában. Válassz újat.').count(),0);
     await page.setViewportSize({width:390,height:844});
+    await dayColor.fill('#334455');await save.click();await page.getByText('Beállítások mentve az SD-kártyára.').waitFor();
+    await page.reload();await touchTab.click();
+    assert.equal(await dayColor.inputValue(),'#334455');assert.equal(profile.touch.dayTextColor,'#334455');
+    assert.equal(profile.touch.enabled,false);assert.equal(profile.touch.corners[3].uuid,savedMissing);
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     assert.deepEqual(errors,[]);
-    console.log('Touch browser checks passed: legacy profile, all zone assignments, filtered controllers, live moods, validation, Tr/M+ bindings, saved/offline state and mobile layout.');
+    console.log('Touch browser checks passed: legacy profiles, desktop/mobile day-color save and reload, all zone assignments, filtered controllers, live moods, validation, Tr/M+ bindings and saved/offline state.');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -277,7 +277,9 @@ const touchActions={
 };
 function blankCorner(){return {type:'',uuid:'',action:'',sceneId:0};}
 function touchProfile(){
-  return app.profile.touch??={enabled:false,tapWindowMs:400,corners:touchCornerNames.map(blankCorner),center:{uuid:'',inputUuid:''}};
+  const t=app.profile.touch??={enabled:false,tapWindowMs:400,corners:touchCornerNames.map(blankCorner),center:{uuid:'',inputUuid:''}};
+  t.dayTextColor??='#8B8C8E';
+  return t;
 }
 function touchEligible(type,row){
   if(!row.control_uuid || row.secured || row.action_uuid==='')return false;
@@ -394,7 +396,10 @@ function renderTouch(){
   const t=touchProfile(),top=panel('Használat Touch-ként');
   const settings=grid(top);
   settings.append(check('Érintési zónák engedélyezése a képernyőkímélőn',t,'enabled'));
+  input(settings,'Nappali szövegszín',t,'dayTextColor','color',{'aria-describedby':'touch-color-hint'});
   top.append(el('p','hint','Az óra képernyőjén a négy sarokhoz külön művelet, középre a helyiség világításvezérlője rendelhető.'));
+  const colorHint=el('p','hint','Az óra, az alsó felirat és az osztóvonal nappal a kiválasztott színnel jelenik meg. Éjszaka mindhárom tompa vörös.');
+  colorHint.id='touch-color-hint';top.append(colorHint);
   if(!app.profile.display.saverSeconds){
     const hint=el('p','hint','Az automatikus képernyőkímélő jelenleg ki van kapcsolva. ');
     hint.append(button('Kijelző beállításai',()=>{app.section='display';render();},'text-button'));top.append(hint);
