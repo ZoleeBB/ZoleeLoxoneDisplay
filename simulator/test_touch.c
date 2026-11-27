@@ -72,7 +72,13 @@ static void zones_and_edges(void)
     expect_at(695, 359, TR);
     expect_at(695, 360, BR);
     expect_at(100, 667, BL);
-    contact(100, 668);
+    expect_at(100, 668, BL);
+    expect_at(40, 700, BL);
+    expect_at(680, 700, BR);
+    expect_at(247, 700, BL);
+    expect_at(473, 700, BR);
+    contact(248, 668);
+    contact(472, 668);
     quiet();
     assert(fixture_page == -1);
 }
@@ -167,6 +173,15 @@ static void canceled_drags(void)
     down(360, 698);
     down(365, 620); /* A 78 képpontos emelés rövid. */
     up(365, 620);
+    down(245, 700); /* A zónából a feloldósávba átlépve a közeli koppintás is megszakad. */
+    down(250, 700);
+    up(250, 700);
+    down(248, 698);
+    down(160, 670);
+    up(150, 555);
+    down(40, 700); /* A sarokból indított húzás nem old fel. */
+    down(40, 560);
+    up(40, 560);
     down(360, 657); /* A feloldás csak az alsó sávban indulhat. */
     down(360, 530);
     up(360, 530);
