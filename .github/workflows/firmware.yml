@@ -32,6 +32,7 @@ jobs:
           cc -std=gnu11 -Icomponents/door_media/include tests/test_intercom_audio_protocol.c components/door_media/app_intercom_audio_protocol.c -lm -o /tmp/test-intercom
           /tmp/test-intercom
           tests/door-audio/run.sh
+          tests/touch-commands/run.sh
       - name: Check persistence, web editor, update transactions and SD catalog
         run: |
           tests/panel-config/run.sh
