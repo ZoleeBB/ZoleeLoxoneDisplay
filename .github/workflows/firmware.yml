@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install host test dependencies
-        run: sudo apt-get update && sudo apt-get install -y libcjson-dev libmbedtls-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libcjson-dev libmbedtls-dev libssl-dev zlib1g-dev
       - name: Exercise Loxone controls and intercom protocol
         run: |
           cc -std=gnu11 -Wall -Wextra -Werror -I/usr/include/cjson -Icomponents/loxone/include -Icomponents/loxone tests/test_loxone_profile.c components/loxone/panel_profile.c components/loxone/app_loxone_model.c -lcjson -lm -o /tmp/test-profile
@@ -38,9 +38,7 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -Imain tests/test_panel_palette.c main/panel_palette.c -lm -o /tmp/test-panel-palette
           /tmp/test-panel-palette
           node --check main/web/admin.js
-          python3 -m unittest discover -s tests -p test_update.py -v
-          python3 tests/test_visual_assets.py
-          python3 tests/test_docs.py
+          python3 -m unittest discover -s tests -p "test_*.py" -v
       - name: Check out the matching LVGL simulator source
         uses: actions/checkout@v4
         with:
