@@ -30,6 +30,23 @@ static const char defaults[] =
     "\"cameraUser\":\"\",\"speakerVolume\":55,\"microphoneGain\":80,\"ringtone\":\"tubular-chime.wav\",\"ringtoneRepeat\":false},"
     "\"tabs\":[]}";
 
+/* Schema v1 profiles written before Touch existed are upgraded in memory.
+ * A save from a client which omits the new section preserves the active mapping. */
+#define EMPTY_CORNER "{\"type\":\"\",\"uuid\":\"\",\"action\":\"\",\"sceneId\":0}"
+static const char touch_defaults[] =
+    "{\"enabled\":false,\"tapWindowMs\":400,\"corners\":["
+    EMPTY_CORNER "," EMPTY_CORNER "," EMPTY_CORNER "," EMPTY_CORNER "],\"center\":{\"uuid\":\"\",\"inputUuid\":\"\"}}";
+#undef EMPTY_CORNER
+
+static bool ensure_touch(cJSON *p,const cJSON *existing) {
+    if(!cJSON_IsObject(p)) return false;
+    if(GET(p,"touch")) return true;
+    cJSON *touch=existing?cJSON_Duplicate(existing,true):cJSON_Parse(touch_defaults);
+    if(touch && cJSON_AddItemToObject(p,"touch",touch)) return true;
+    cJSON_Delete(touch);
+    return false;
+}
+
 static const char *string(const cJSON *obj,const char *key) {
     const char *s=cJSON_GetStringValue(GET(obj,key));
     return s?s:"";
@@ -91,7 +108,7 @@ static cJSON *load_file(const char *path,secrets_t *s) {
     body[len]=0;
     root=panel_parse_document(body,(size_t)len);
     cJSON *candidate=GET(root,"profile"), *vault=GET(root,"credentials");
-    if(!panel_schema_validate(candidate,NULL,0) || !cJSON_IsObject(vault) ||
+    if(!ensure_touch(candidate,NULL) || !panel_schema_validate(candidate,NULL,0) || !cJSON_IsObject(vault) ||
        !transfer_secrets(candidate,vault,s,false)) goto done;
     p=cJSON_DetachItemFromObjectCaseSensitive(root,"profile");
 done:
@@ -113,6 +130,7 @@ esp_err_t panel_config_init(void) {
     if(!profile && access(PROFILE_PATH,F_OK)!=0 && errno==ENOENT &&
         access(PROFILE_PATH ".bak",F_OK)!=0 && errno==ENOENT)
         profile=cJSON_Parse(defaults);
+    if(profile && !ensure_touch(profile,NULL)) { cJSON_Delete(profile); profile=NULL; return ESP_ERR_NO_MEM; }
     return profile?ESP_OK:ESP_ERR_INVALID_STATE;
 }
 cJSON *panel_config_snapshot(void) {
@@ -194,11 +212,15 @@ esp_err_t panel_config_save(const cJSON *input,char *error,size_t n) {
     cJSON *next=cJSON_Duplicate(input,true);
     if(!next) return ESP_ERR_NO_MEM;
     for(int i=0;i<3;++i) cJSON_DeleteItemFromObjectCaseSensitive(next,secret_keys[i]);
-    if(!panel_schema_validate(next,error,n)) { cJSON_Delete(next); return ESP_ERR_INVALID_ARG; }
     esp_err_t err=ESP_FAIL;
     secrets_t fresh={0};
     xSemaphoreTake(lock,portMAX_DELAY);
     if(!profile) { message(error,n,"A konfiguráció nem tölthető be."); goto done; }
+    if(!ensure_touch(next,GET(profile,"touch"))) {
+        message(error,n,"Nincs elegendő memória az érintőzónák beállításához.");
+        err=ESP_ERR_NO_MEM; goto done;
+    }
+    if(!panel_schema_validate(next,error,n)) { err=ESP_ERR_INVALID_ARG; goto done; }
     int rev=GET(profile,"revision")->valueint;
     if(GET(next,"revision")->valueint!=rev) {
         message(error,n,"A beállítások közben megváltoztak. Töltsd újra az oldalt.");

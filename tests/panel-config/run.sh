@@ -9,7 +9,7 @@ cc -std=gnu11 -Wall -Wextra -Werror -DPROFILE_PATH='"panel.json"' \
   -I"$root/main" -I"$root/tests/panel-config/stubs" \
   ${PANEL_TEST_CFLAGS:--I/usr/include/cjson} \
   "$root/main/panel_config.c" "$root/main/panel_schema.c" "$root/main/panel_secret.c" \
-  "$root/tests/panel-config/host.c" "$root/tests/panel-config/test.c" \
+  "$root/tests/panel-config/host.c" "$root/tests/panel-config/test.c" "$root/tests/panel-config/touch.c" \
   ${PANEL_TEST_LIBS:--lcjson -lmbedcrypto} -lpthread -lm -o panel-test
 ./panel-test init
 if grep -q 'secret-admin\|secret-connection' panel.json panel.json.bak; then exit 1; fi
@@ -18,4 +18,6 @@ echo incomplete >panel.json
 ./panel-test recover
 echo broken >device.key
 ./panel-test fail-closed
+mkdir touch
+(cd touch && ../panel-test touch-old-file && ../panel-test touch-migrate && ../panel-test touch-legacy-client && ../panel-test touch-reload)
 echo 'Panel settings transaction, recovery and credential tests passed.'

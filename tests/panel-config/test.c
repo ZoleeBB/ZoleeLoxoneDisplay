@@ -67,9 +67,11 @@ static void restore_backup(void){
     assert(save(d)==ESP_OK && panel_config_generation()==5);
     cJSON_Delete(d);
 }
+void panel_test_touch(const char *stage);
 int main(int argc,char **argv){
     assert(argc==2);
-    if(!strcmp(argv[1],"init")) initial_save();
+    if(!strncmp(argv[1],"touch-",6)) panel_test_touch(argv[1]);
+    else if(!strcmp(argv[1],"init")) initial_save();
     else if(!strcmp(argv[1],"reload")) reload();
     else if(!strcmp(argv[1],"recover")) restore_backup();
     else if(!strcmp(argv[1],"fail-closed")) {

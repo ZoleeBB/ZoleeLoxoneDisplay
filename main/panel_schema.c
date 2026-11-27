@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #define GET(o,k) cJSON_GetObjectItemCaseSensitive(o,k)
 static const char *str(const cJSON *o, const char *k) {
@@ -74,6 +75,34 @@ static bool display(const cJSON *o) {
         clock_time(str(o,"nightStart")) && clock_time(str(o,"nightEnd")) &&
         uuid(str(o,"nightUuid"),strcmp(str(o,"nightMode"),"value")!=0);
 }
+static bool touch_corner(const cJSON *corner) {
+    if (!fields(corner,"type uuid action sceneId") ||
+        !string_field(corner,"type",16,true) || !string_field(corner,"action",16,true) ||
+        !uuid(str(corner,"uuid"),true) || !integer(corner,"sceneId",0,2147483647)) return false;
+    const char *type=str(corner,"type"), *action=str(corner,"action"), *id=str(corner,"uuid");
+    int scene=GET(corner,"sceneId")->valueint;
+    if (!*type) return !*action && !*id && scene==0;
+    if (!*id || (scene!=0 && strcmp(action,"scene"))) return false;
+    if (one_of(type,"pulse switch")) return !strcmp(action,"trigger");
+    if (!strcmp(type,"shading")) return one_of(action,"up down");
+    if (!strcmp(type,"audio")) return one_of(action,"volumeUp volumeDown next previous playPause");
+    return !strcmp(type,"lighting") && one_of(action,"next previous scene");
+}
+
+static bool touch(const cJSON *section) {
+    if (!fields(section,"enabled tapWindowMs corners center") || !cJSON_IsBool(GET(section,"enabled")) ||
+        !integer(section,"tapWindowMs",150,1000)) return false;
+    const cJSON *corners=GET(section,"corners"), *center=GET(section,"center"), *corner;
+    if (!cJSON_IsArray(corners) || cJSON_GetArraySize(corners)!=4 ||
+        !fields(center,"uuid inputUuid") || !uuid(str(center,"uuid"),true)) return false;
+    if (GET(center,"inputUuid")) {
+        const char *input=str(center,"inputUuid"), *light=str(center,"uuid");
+        if (!uuid(input,true) || (*input && (!*light || !strcasecmp(input,light)))) return false;
+    }
+    cJSON_ArrayForEach(corner,corners) if (!touch_corner(corner)) return false;
+    return true;
+}
+
 static bool camera_url(const char *s) {
     if (!s || !*s) return true;
     if (strncmp(s,"http://",7) || strpbrk(s," \t\r\n@#")) return false;
@@ -117,13 +146,15 @@ static bool block(const cJSON *b) {
 }
 bool panel_schema_validate(const cJSON *p,char *error,size_t n) {
     const char *why="Érvénytelen konfiguráció vagy sémaverzió.";
-    if (!fields(p,"schema revision loxone display tabs intercom adminUser") ||
+    if (!fields(p,"schema revision loxone display tabs intercom adminUser touch") ||
         !integer(p,"schema",1,1) || !integer(p,"revision",1,2147483647) ||
         !string_field(p,"adminUser",63,true) || strpbrk(str(p,"adminUser"),":\r\n")) goto fail;
     why="Ellenőrizd a Miniserver címét, portját és TLS esetén a CA-tanúsítványt.";
     if (!connection(GET(p,"loxone"))) goto fail;
     why="Érvénytelen időpont, fényerő, időzítés vagy éjszakai állapot-UUID.";
     if (!display(GET(p,"display"))) goto fail;
+    why="Ellenőrizd a Touch négy sarkának típusát és műveletét, a középső világítás UUID-jét és a 150–1000 ms-os érintésközt.";
+    if (!touch(GET(p,"touch"))) goto fail;
     why="A kaputelefonhoz helyi HTTP/MJPEG-videócím és csengetésállapot szükséges.";
     if (!intercom(GET(p,"intercom"))) goto fail;
     const cJSON *tabs=GET(p,"tabs"), *tab;
