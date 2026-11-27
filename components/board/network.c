@@ -16,7 +16,8 @@
 #endif
 
 static const char *TAG = "board_network";
-static esp_netif_t *station;
+static _Atomic uint32_t station_ip;
+static _Atomic uint32_t ethernet_ip;
 static esp_netif_t *ethernet;
 static SemaphoreHandle_t station_lock;
 static esp_timer_handle_t retry_timer;
@@ -88,13 +89,18 @@ static void on_network_event(void *arg, esp_event_base_t base, int32_t id, void 
             schedule_retry();
         }
     } else if (base == WIFI_EVENT) {
+        station_ip = 0;
         const wifi_event_sta_disconnected_t *event = data;
         if (event->reason == WIFI_REASON_ASSOC_LEAVE)
             return;
         connect_failed = true;
         if (has_credentials)
             schedule_retry();
-    } else if (base == IP_EVENT) {
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP) {
+        station_ip = 0;
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        const ip_event_got_ip_t *event = data;
+        station_ip = event->ip_info.ip.addr;
         esp_timer_stop(retry_timer);
         connect_failed = false;
         /* Ha közben másik SSID-t kért a felhasználó, a korábbi DHCP-esemény
@@ -114,6 +120,16 @@ static void on_network_event(void *arg, esp_event_base_t base, int32_t id, void 
 }
 
 #if CONFIG_PANEL_ETHERNET
+static void on_lan_event(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    if (base == IP_EVENT && id == IP_EVENT_ETH_GOT_IP) {
+        const ip_event_got_ip_t *event = data;
+        ethernet_ip = event->ip_info.ip.addr;
+    } else {
+        ethernet_ip = 0;
+    }
+}
+
 static esp_err_t start_ethernet(void)
 {
     /* A P4 alapértelmezett RMII-kiosztása (MDC31, MDIO52, REF_CLK50)
@@ -168,7 +184,7 @@ fail:
 static esp_err_t start_wifi(void)
 {
     station_lock = xSemaphoreCreateMutex();
-    station = esp_netif_create_default_wifi_sta();
+    esp_netif_t *station = esp_netif_create_default_wifi_sta();
     if (!station || !station_lock)
         return ESP_ERR_NO_MEM;
     esp_timer_create_args_t timer = {.callback = post_retry, .name = "wifi_retry"};
@@ -176,6 +192,7 @@ static esp_err_t start_wifi(void)
     ESP_RETURN_ON_ERROR(esp_event_handler_register(BOARD_RECONNECT_EVENT, 0, on_network_event, NULL), TAG, "retry");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, on_network_event, NULL), TAG, "STA");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_network_event, NULL), TAG, "IPv4");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_LOST_IP, on_network_event, NULL), TAG, "IPv4");
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_RETURN_ON_ERROR(esp_wifi_init(&init), TAG, "C6");
     ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "STA storage");
@@ -195,6 +212,9 @@ esp_err_t board_network_init(void)
     ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "netif");
     ESP_RETURN_ON_ERROR(esp_event_loop_create_default(), TAG, "events");
 #if CONFIG_PANEL_ETHERNET
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_lan_event, NULL), TAG, "LAN IPv4");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, on_lan_event, NULL), TAG, "LAN IPv4");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED, on_lan_event, NULL), TAG, "LAN link");
     esp_err_t lan = start_ethernet();
     if (lan != ESP_OK)
         ESP_LOGW(TAG, "Ethernet: %s", esp_err_to_name(lan));
@@ -208,16 +228,15 @@ bool board_network_address(char *out, size_t capacity)
     if (!out || !capacity)
         return false;
     out[0] = '\0';
-    esp_netif_t *interfaces[] = {ethernet, station};
-    for (size_t i = 0; i < sizeof(interfaces) / sizeof(interfaces[0]); ++i) {
-        esp_netif_ip_info_t ip;
-        if (interfaces[i] && esp_netif_is_netif_up(interfaces[i]) &&
-            esp_netif_get_ip_info(interfaces[i], &ip) == ESP_OK && ip.ip.addr) {
-            int length = snprintf(out, capacity, IPSTR, IP2STR(&ip.ip));
-            return length > 0 && (size_t)length < capacity;
-        }
-    }
-    return false;
+    /* A UI és a Loxone kliens sűrűn kér állapotot. A DHCP-eseményben eltett
+     * cím olvasásakor nincs lwIP IPC vagy SDIO-forgalom. */
+    esp_ip4_addr_t ip = {.addr = atomic_load(&ethernet_ip)};
+    if (!ip.addr)
+        ip.addr = atomic_load(&station_ip);
+    if (!ip.addr)
+        return false;
+    int length = snprintf(out, capacity, IPSTR, IP2STR(&ip));
+    return length > 0 && (size_t)length < capacity;
 }
 
 esp_err_t board_wifi_scan(board_ap_t *out, size_t capacity, size_t *count)
