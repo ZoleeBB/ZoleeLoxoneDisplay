@@ -108,10 +108,25 @@ function assetButton(kind,id,onSelect){
 }
 function openPicker(kind,selected,onSelect){
   const dialog=$('picker'); $('pickTitle').textContent=kind==='icons'?'Fülikon kiválasztása':'Háttérkép kiválasztása';
-  const filter=$('filter'); filter.value='';
+  const filter=$('filter');filter.value='';
+  const categories=$('pickCategory');
+  categories.hidden=kind!=='backgrounds';
+  let category='';
+  for(const b of categories.querySelectorAll('button')){
+    b.setAttribute('aria-pressed',String(b.dataset.category===category));
+    b.onclick=()=>{
+      category=b.dataset.category;
+      for(const item of categories.querySelectorAll('button'))
+        item.setAttribute('aria-pressed',String(item===b));
+      show();
+    };
+  }
   function show(){
     const box=$('choices'); box.replaceChildren();
-    for(const a of app.assets[kind].filter(a=>(a.name+' '+a.id).toLocaleLowerCase('hu').includes(filter.value.toLocaleLowerCase('hu')))){
+    const query=filter.value.trim().toLocaleLowerCase('hu');
+    for(const a of app.assets[kind]){
+      if(category && a.category!==category) continue;
+      if(!(a.name+' '+a.id).toLocaleLowerCase('hu').includes(query)) continue;
       const b=button('',()=>{dialog.close(); onSelect(a.id); refresh();},'preview '+(kind==='icons'?'icon':''));
       b.setAttribute('aria-pressed',a.id===selected); b.append(image(kind,a.id),el('span','',a.name)); box.append(b);
     }

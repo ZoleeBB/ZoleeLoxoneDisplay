@@ -13,11 +13,12 @@ def table(name):
 
 
 def main():
-    backgrounds = table("landscapes.tsv") + [[row[0], row[1]] for row in PALETTES]
+    backgrounds = [(asset_id, label, "landscape") for asset_id, label in table("landscapes.tsv")]
+    backgrounds += [(row[0], row[1], "pattern") for row in PALETTES]
     icons = table("icons.tsv")
     catalog = {"backgrounds": [], "icons": []}
     (SD / "thumbs").mkdir(exist_ok=True)
-    for asset_id, label in backgrounds:
+    for asset_id, label, category in backgrounds:
         thumb = f"thumbs/{asset_id}.jpg"
         with Image.open(SD / "backgrounds" / (asset_id + ".jpg")) as im:
             if im.size != (720, 720) or im.mode != "RGB" or im.format != "JPEG" or im.info.get("progressive"):
@@ -25,7 +26,7 @@ def main():
             im.resize((120, 120), Image.Resampling.LANCZOS).save(
                 SD / thumb, "JPEG", quality=82, optimize=True, progressive=False
             )
-        catalog["backgrounds"].append({"id": asset_id, "name": label, "thumbnail": thumb})
+        catalog["backgrounds"].append({"id": asset_id, "name": label, "category": category, "thumbnail": thumb})
     for asset_id, _, label in icons:
         with Image.open(SD / "icons" / (asset_id + ".png")) as im:
             if im.mode != "RGBA" or im.size != (64, 64) or im.getchannel("A").getextrema() != (0, 255):
