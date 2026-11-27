@@ -3,7 +3,7 @@
 #include "app_loxone_controls_service.h"
 #include "app_loxone_audio_service.h"
 
-esp_err_t zld_loxone_start(bool (*network_ready)(void));
+esp_err_t zld_loxone_start(bool (*network_ready)(void), uint32_t (*config_generation)(void));
 /* A kérés a konfigurációt mélyen másolja. A hívó a visszatéréskor azonnal
  * törölheti a két jelszót és a JSON-t. Foglalt sornál a hívó újrapróbál. */
 esp_err_t zld_loxone_configure(const cJSON *panel, const char *password, const char *camera_password);
@@ -20,3 +20,9 @@ bool zld_loxone_mood(const char *id, unsigned revision, unsigned index, lx_light
 esp_err_t zld_loxone_select_mood(const char *id, unsigned revision, unsigned mood_id);
 
 void zld_loxone_pause_media(bool paused);
+
+/* Zónák: bal felső, jobb felső, bal alsó, jobb alsó, középső. */
+uint32_t zld_touch_session(unsigned profile_generation);
+esp_err_t zld_touch_press(unsigned profile_generation, uint32_t session, unsigned zone, unsigned taps);
+void zld_touch_cancel(void);
+cJSON *zld_touch_moods(const char *controller_uuid);

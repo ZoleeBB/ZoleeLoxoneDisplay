@@ -4,6 +4,7 @@
  * küldünk vezérlést. Kizárólag a meglévő Loxone-worker használja. */
 #define LIGHT_CACHE_MAX_STATES LX_CATALOG_MAX
 #define LIGHT_CACHE_TEXT_BUDGET (64U * 1024U)
+#define TOUCH_CACHE_TEXT_BUDGET (512U * 1024U)
 
 typedef struct
 {
@@ -12,14 +13,14 @@ typedef struct
     size_t length;
     double number;
     int64_t received_us;
-    bool seen, numeric;
+    bool seen, numeric, touch_only;
 } light_cache_entry_t;
 
 static struct
 {
     light_cache_entry_t *entries;
     unsigned count, capacity;
-    size_t text_bytes;
+    size_t text_bytes, touch_text_bytes;
     bool built, failed;
 } s_light_cache;
 
@@ -170,6 +171,29 @@ static void lighting_cache_prepare(void)
         }
         cJSON_Delete(meta);
     }
+    /* The editor may ask for any controller's moods before a tile or Touch
+     * mapping exists. Retain only those lists and the states of mapped targets.
+     * Additional text has a separate PSRAM budget from ordinary room widgets. */
+    const cJSON *row;
+    cJSON_ArrayForEach(row, s_catalog) {
+        const cJSON *states = cJSON_GetObjectItemCaseSensitive(row, "touch_states");
+        if (!states) continue;
+        const char *id = lighting_cache_string(row, "control_uuid");
+        bool mapped = false;
+        if (s_profile && s_profile->touch.enabled) {
+            for (unsigned i = 0; i <= LX_TOUCH_CENTER; ++i) {
+                const lx_touch_mapping_t *zone = &s_profile->touch.zones[i];
+                if (!strcmp(zone->uuid, id) || !strcmp(zone->input_uuid, id)) mapped = true;
+            }
+        }
+        const cJSON *state;
+        cJSON_ArrayForEach(state, states) {
+            if (!mapped && strcmp(state->string, "moodList")) continue;
+            unsigned previous = s_light_cache.count;
+            if (!lighting_cache_add(state->valuestring)) { ok = false; break; }
+            if (s_light_cache.count != previous) s_light_cache.entries[previous].touch_only = true;
+        }
+    }
     s_light_cache.failed = !ok;
     if (s_light_cache.count > 1)
         qsort(s_light_cache.entries, s_light_cache.count, sizeof(*s_light_cache.entries),
@@ -204,10 +228,12 @@ static void lighting_cache_store(const char *uuid, bool numeric, double value,
         return;
     /* Előbb érvénytelenítünk: foglalási hibánál sem maradhat régi, feloldott
      * jLocked állapot. Az üres szöveg viszont valódi, ismert állapot. */
+    size_t *used_bytes = entry->touch_only ? &s_light_cache.touch_text_bytes : &s_light_cache.text_bytes;
+    const size_t budget = entry->touch_only ? TOUCH_CACHE_TEXT_BUDGET : LIGHT_CACHE_TEXT_BUDGET;
     entry->seen = false;
     if (entry->text)
     {
-        s_light_cache.text_bytes -= entry->length + 1;
+        *used_bytes -= entry->length + 1;
         free(entry->text);
         entry->text = NULL;
     }
@@ -216,7 +242,7 @@ static void lighting_cache_store(const char *uuid, bool numeric, double value,
     if (!numeric && length)
     {
         if (!text || length > LX_LIGHT_TEXT_MAX ||
-            length + 1 > LIGHT_CACHE_TEXT_BUDGET - s_light_cache.text_bytes)
+            length + 1 > budget - *used_bytes)
         {
             s_light_cache.failed = true;
             return;
@@ -229,7 +255,7 @@ static void lighting_cache_store(const char *uuid, bool numeric, double value,
         }
         memcpy(entry->text, text, length);
         entry->length = length;
-        s_light_cache.text_bytes += length + 1;
+        *used_bytes += length + 1;
     }
     entry->number = value;
     entry->received_us = esp_timer_get_time();

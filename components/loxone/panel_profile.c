@@ -1,6 +1,7 @@
 /* The web editor owns persistence. This converts its tab document to the
  * bounded models consumed by the original Loxone transport and block services. */
 #include "panel_profile.h"
+#include <limits.h>
 #include <ctype.h>
 #include <math.h>
 #include <string.h>
@@ -56,6 +57,26 @@ static bool read_card(lx_home_card_t *card, const cJSON *block)
         uuid(card->control_uuid, text(block, "uuid")) && uuid(card->source.uuid, source);
 }
 
+static bool read_touch(lx_touch_config_t *out, const cJSON *touch)
+{
+    out->enabled = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(touch, "enabled"));
+    const cJSON *corners = cJSON_GetObjectItemCaseSensitive(touch, "corners");
+    if (cJSON_GetArraySize(corners) > LX_TOUCH_CORNERS) return false;
+    for (unsigned i = 0; i <= LX_TOUCH_CENTER; ++i) {
+        bool center = i == LX_TOUCH_CENTER;
+        const cJSON *src = center ? cJSON_GetObjectItemCaseSensitive(touch, "center") :
+                                    cJSON_GetArrayItem(corners, (int)i);
+        lx_touch_mapping_t *target = &out->zones[i];
+        double scene = number(src, "sceneId", 0);
+        if (!uuid(target->uuid, text(src, "uuid")) || !uuid(target->input_uuid, text(src, "inputUuid")) ||
+            !copy_text(target->type, sizeof(target->type), center ? "lighting" : text(src, "type")) ||
+            !copy_text(target->action, sizeof(target->action), center ? "next" : text(src, "action")) ||
+            scene < 0 || scene > INT_MAX || floor(scene) != scene) return false;
+        target->scene_id = (unsigned)scene;
+    }
+    return true;
+}
+
 bool panel_profile_read(panel_profile_t *out, const cJSON *panel, const char *password, const char *camera_password)
 {
     if (!out || !cJSON_IsObject(panel)) return false;
@@ -64,6 +85,7 @@ bool panel_profile_read(panel_profile_t *out, const cJSON *panel, const char *pa
     if (!cJSON_IsNumber(revision) || revision->valueint < 1 || revision->valuedouble != revision->valueint)
         return false;
     out->generation = (unsigned)revision->valueint;
+    if (!read_touch(&out->touch, cJSON_GetObjectItemCaseSensitive(panel, "touch"))) return false;
     lx_config_t *conn = &out->connection;
     lx_config_defaults(conn);
     const cJSON *loxone = cJSON_GetObjectItemCaseSensitive(panel, "loxone");

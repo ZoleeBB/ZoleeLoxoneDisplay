@@ -477,8 +477,8 @@ static void lighting_reconcile(void)
 {
     /* Csak a worker hívja; a nyers cache olvasója és írója ugyanaz a feladat.
      * A GUI soha nem járja be a katalógust és nem foglal hozzá memóriát. */
-    lighting_cache_prepare();
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    lighting_cache_prepare();
     unsigned generation = s_light_generation, revision = s_home_revision;
     int page = s_light_page;
     bool change = s_light_built_generation != generation || s_light_built_revision != revision;

@@ -46,6 +46,7 @@ static void finish_refresh(void)
 static QueueHandle_t s_messages, s_requests, s_home_commands;
 static panel_profile_t *s_profile;
 static bool (*s_network_ready)(void);
+static uint32_t (*s_config_generation)(void);
 static _Atomic(lx_home_config_t *) s_home;
 static bool s_home_busy;
 static unsigned s_home_revision;
@@ -202,9 +203,9 @@ static bool send_encrypted(const char *command)
     if(ok)snprintf(s_salt,sizeof(s_salt),"%s",sh);
     mbedtls_aes_free(&aes);if(input)mbedtls_platform_zeroize(input,padded);free(input);free(cipher);free(base);free(escaped);free(wrapped);return ok;
 }
-static cJSON *reply(const char *command,bool encrypt)
+static cJSON *receive_reply(const char *command, bool encrypt, bool match_io)
 {
-    if(!(encrypt?send_encrypted(command):send_plain(command))){failed("A kérés nem küldhető el.",0);return NULL;}
+    if(!(encrypt?send_encrypted(command):send_plain(command))){s_dead=true;failed("A kérés nem küldhető el.",0);return NULL;}
     int64_t deadline=esp_timer_get_time()+LX_TIMEOUT_MS*1000LL;
     while(!s_dead&&esp_timer_get_time()<deadline) {
         message_t m;if(xQueueReceive(s_messages,&m,pdMS_TO_TICKS(100))!=pdTRUE)continue;
@@ -212,6 +213,10 @@ static cJSON *reply(const char *command,bool encrypt)
         if(m.type!=0){if(s_session_config&&!update_values(m.type,m.data,m.length))s_dead=true;free_message(&m);continue;}
         cJSON *root=cJSON_ParseWithLength((char*)m.data,m.length);free_message(&m);
         cJSON *ll=cJSON_GetObjectItemCaseSensitive(root,"LL");
+        if (match_io && !lx_touch_ack_matches(command, string(ll, "control"))) {
+            cJSON_Delete(root);
+            continue;
+        }
         cJSON *code=cJSON_GetObjectItemCaseSensitive(ll,"Code");
         if(!code)code=cJSON_GetObjectItemCaseSensitive(ll,"code");
         bool ok=(cJSON_IsNumber(code)&&code->valueint==200)||(cJSON_IsString(code)&&strcmp(code->valuestring,"200")==0);
@@ -224,7 +229,16 @@ static cJSON *reply(const char *command,bool encrypt)
          * sikerét ettől függetlenül kizárólag a bináris állapot igazolja. */
         cJSON *value=ok?(returned?cJSON_Duplicate(returned,true):cJSON_CreateNull()):NULL;
         cJSON_Delete(root);return value;
-    }failed(s_dead?"A kapcsolat megszakadt.":"12 másodpercen belül nem érkezett válasz.",0);return NULL;
+    }
+    failed(s_dead?"A kapcsolat megszakadt.":"12 másodpercen belül nem érkezett válasz.",0);
+    /* Without request IDs a late response to the very same command cannot
+     * be disambiguated. Reconnect before issuing another request. */
+    s_dead = true;
+    return NULL;
+}
+static cJSON *reply(const char *command, bool encrypt)
+{
+    return receive_reply(command, encrypt, false);
 }
 static int rng(void *ctx,unsigned char *out,size_t len){(void)ctx;esp_fill_random(out,len);return 0;}
 static bool key_exchange(void)
@@ -488,6 +502,7 @@ static bool connect_server(const lx_config_t *cfg)
     return key_exchange();
 }
 #include "app_loxone_lighting_service.inc"
+#include "panel_touch_service.inc"
 
 /* A kapu képe az aktuális Loxone metaadatból származik. Csak struktúra-
  * vagy profilváltáskor oldjuk fel, sohasem a 200 ms-os képernyőciklusban. */
@@ -534,9 +549,10 @@ static void invalidate(void)
     memset(s_energy, 0, sizeof(s_energy));
     memset(&s_night_values, 0, sizeof(s_night_values));
     s_home_live = false;
+    touch_cancel_locked();
     app_loxone_audio_session(NULL, NULL, false);
     lighting_invalidate_locked();
-    s_home_session++;
+    if (++s_home_session == 0) ++s_home_session;
     memset(&s_home_values, 0, sizeof(s_home_values));
     if (s_command_pending)
         snprintf(s_command_status, sizeof(s_command_status), "%s",
@@ -651,6 +667,7 @@ static void worker(void *arg)
             }
             /* A hangerő a Miniserver alapvezérlése. A külön Audioserver
              * kapcsolódása vagy hitelesítése nem késleltetheti a húzást. */
+            touch_poll();
             audio_session_retry(active, token, &audio_pending);
             if (!s_dead) app_loxone_audio_poll(esp_timer_get_time());
             home_command_poll(now);
@@ -681,9 +698,9 @@ retry:
     }
 }
 
-esp_err_t zld_loxone_start(bool (*network_ready)(void))
+esp_err_t zld_loxone_start(bool (*network_ready)(void), uint32_t (*config_generation)(void))
 {
-    if (!network_ready) return ESP_ERR_INVALID_ARG;
+    if (!network_ready || !config_generation) return ESP_ERR_INVALID_ARG;
     if (atomic_flag_test_and_set(&s_starting)) return ESP_ERR_INVALID_STATE;
     if (s_lock) { atomic_flag_clear(&s_starting); return ESP_OK; }
     SemaphoreHandle_t lock = xSemaphoreCreateMutex();
@@ -691,6 +708,7 @@ esp_err_t zld_loxone_start(bool (*network_ready)(void))
     s_requests = xQueueCreate(1, sizeof(panel_profile_t *));
     s_home_commands = xQueueCreate(1, sizeof(home_command_t));
     s_network_ready = network_ready;
+    s_config_generation = config_generation;
     if (lock && s_messages && s_requests && s_home_commands &&
         xTaskCreatePinnedToCore(worker, "loxone", 12288, NULL, 3, NULL, 0) == pdPASS) {
         atomic_store(&s_lock, lock);
@@ -743,6 +761,7 @@ static bool update_values(int type, const uint8_t *data, size_t size)
         bool was_ringing = s_intercom_ringing;
         ok = lx_intercom_bell_update(&s_intercom_ringing, &s_home->intercom, type, data, size);
         /* Felépült beszélgetés alatt a csengő éle nem cseréli le a hívást. */
+        if (!was_ringing && s_intercom_ringing) touch_cancel_locked();
         if (was_ringing != s_intercom_ringing && !intercom_held(s_intercom_generation))
             s_intercom_generation++;
     }
@@ -1156,7 +1175,8 @@ cJSON *zld_loxone_catalog(void)
      * potentially large nested block snapshots remain in the worker. */
     static const char *const keys[] = {"uuid", "control_uuid", "name", "type", "state",
                                         "room", "category", "action_uuid", "secured", "lighting_blocked", "irc_blocked",
-                                        "shading_blocked", "controls_type", "controls_blocked"};
+                                        "shading_blocked", "controls_type", "controls_blocked",
+                                        "touch_input", "touch_button", "touch_switch", "touch_target"};
     xSemaphoreTake(s_lock, portMAX_DELAY);
     const cJSON *row;
     cJSON_ArrayForEach(row, s_catalog) {

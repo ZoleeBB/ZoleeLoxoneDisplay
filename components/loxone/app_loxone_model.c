@@ -1,5 +1,6 @@
 /* A Loxone protokoll platformfüggetlen adat- és párosításkezelése. */
 #include "app_loxone_model.h"
+#include "panel_touch.h"
 #include "app_loxone_lighting.h"
 #include "app_loxone_irc.h"
 #include "app_loxone_shading.h"
@@ -382,9 +383,11 @@ static bool catalog_entry(cJSON *out, const cJSON *control, const cJSON *state,
     cJSON_Delete(item);
     return false;
 }
+static bool light_blocked(const cJSON *control, bool inherited);
+
 static bool catalog_controls(
     cJSON *out, const cJSON *controls, const cJSON *rooms, const cJSON *cats, int depth,
-    bool parent_secured, lx_irc_unit_t temp_unit, const cJSON *structure)
+    bool parent_secured, bool touch_restricted, lx_irc_unit_t temp_unit, const cJSON *structure)
 {
     if (depth > 8)
         return false;
@@ -413,10 +416,11 @@ static bool catalog_controls(
              !lx_irc_catalog_attach(cJSON_GetArrayItem(out, (int)before), control, secured, temp_unit) ||
              !lx_shading_catalog_attach(cJSON_GetArrayItem(out, (int)before), control, secured) ||
              !lx_controls_catalog_attach(cJSON_GetArrayItem(out, (int)before), control, secured, rooms, structure) ||
-             !lx_audio_catalog_attach(cJSON_GetArrayItem(out, (int)before), control, secured, structure)))
+             !lx_audio_catalog_attach(cJSON_GetArrayItem(out, (int)before), control, secured, structure) ||
+             !lx_touch_attach(cJSON_GetArrayItem(out, (int)before), control, secured || touch_restricted)))
             return false;
         const cJSON *sub = cJSON_GetObjectItemCaseSensitive(control, "subControls");
-        if (sub && !catalog_controls(out, sub, rooms, cats, depth + 1, secured, temp_unit, structure))
+        if (sub && !catalog_controls(out, sub, rooms, cats, depth + 1, secured, light_blocked(control, touch_restricted), temp_unit, structure))
             return false;
     }
     return true;
@@ -437,7 +441,7 @@ cJSON *lx_catalog_parse(const char *json, size_t length)
                           controls,
                           cJSON_GetObjectItemCaseSensitive(root, "rooms"),
                           cJSON_GetObjectItemCaseSensitive(root, "cats"),
-                          0, false, temp_unit, root))
+                          0, false, false, temp_unit, root))
     {
         cJSON_Delete(root);
         cJSON_Delete(out);
@@ -467,3 +471,5 @@ int64_t lx_token_refresh_delay_us(int64_t valid_until, int64_t now_epoch)
 #include "app_loxone_controls_model.inc"
 
 #include "app_loxone_audio_model.inc"
+
+#include "panel_touch_model.inc"
