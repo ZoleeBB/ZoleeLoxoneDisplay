@@ -1,5 +1,6 @@
 #include "board.h"
 #include "panel_config.h"
+#include "panel_energy_stats.h"
 #include "panel_intercom_ui.h"
 #include "panel_ui.h"
 #include "panel_ui_style.h"
@@ -9,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "esp_ota_ops.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mbedtls/platform_util.h"
@@ -151,10 +153,17 @@ void app_main(void)
 
     uint32_t applied = 0;
     bool intercom = false;
+    int64_t next_sample = 0;
     for (;;) {
         uint32_t current = panel_config_generation();
         if (current != applied && apply_profile(current, &intercom)) applied = current;
-        panel_intercom_media_tick(intercom && zld_assets_ready());
+        bool ready = zld_assets_ready();
+        panel_intercom_media_tick(intercom && ready);
+        int64_t now = esp_timer_get_time();
+        if (ready && now >= next_sample) {
+            next_sample = now + 1000000;
+            panel_energy_stats_tick();
+        }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
