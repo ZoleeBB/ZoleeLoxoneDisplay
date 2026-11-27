@@ -44,7 +44,7 @@ class CardUpdate(unittest.TestCase):
         PACK.package(self.assets, image, "31416", "rev1", bundle)
         subprocess.run(["node", str(FIXTURE / "browser.cjs"), str(UPDATE / "update.html"), str(bundle)], check=True)
 
-    def test_firmware_transaction(self):
+    def compile_transaction(self, assets):
         # Transport stubs and an in-memory flash partition wrap the same C handlers
         # used by ESP-IDF. Card operations act on real files in the working dir.
         for header in re.findall(r'^#include "([^"]+)"', (UPDATE / "zld_update.c").read_text(), re.M):
@@ -53,12 +53,32 @@ class CardUpdate(unittest.TestCase):
                 stub.parent.mkdir(parents=True, exist_ok=True)
                 stub.touch()
         (self.workspace / "esp_http_server.h").touch()
-        PACK.write_index(self.assets, self.workspace / "zld_asset_index.inc")
+        PACK.write_index(assets, self.workspace / "zld_asset_index.inc")
         binary = self.workspace / "transaction"
         subprocess.run(["cc", "-std=gnu17", "-Wno-deprecated-declarations", "-include", str(FIXTURE / "host.h"),
                         "-I", str(self.workspace), "-I", str(UPDATE), "-I", str(UPDATE / "include"),
                         str(FIXTURE / "transaction.c"), "-lcrypto", "-o", str(binary)], check=True)
-        subprocess.run([str(binary)], cwd=self.workspace, check=True)
+        return binary
+
+    def test_firmware_transaction(self):
+        subprocess.run([self.compile_transaction(self.assets)], cwd=self.workspace, check=True)
+
+    def test_shipped_catalog_delta(self):
+        # Use the shipping files and their exact flash index. Seed all but one
+        # content-addressed blob, then ask the device which file to upload.
+        directory = ROOT / "sdcard"
+        rows = PACK.entries(directory)
+        missing = next(i for i, (name, _, _) in enumerate(rows) if name == "catalog.json")
+        data = self.workspace / "card" / "zld" / "blobs"
+        for i, (name, _, sha) in enumerate(rows):
+            if i == missing:
+                continue
+            path = data / sha[:2] / (sha + Path(name).suffix)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.symlink_to(directory / name)
+        (self.workspace / "release.idx").write_bytes(PACK.manifest_bytes(rows))
+        subprocess.run([self.compile_transaction(directory), str(missing)], cwd=self.workspace, check=True)
 
 
 if __name__ == "__main__":

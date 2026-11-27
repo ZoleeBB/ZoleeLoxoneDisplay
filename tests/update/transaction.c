@@ -22,8 +22,35 @@ static esp_err_t simulate_busy_write(httpd_req_t *req) {
     return httpd_resp_sendstr(req,"OK");
 }
 
-int main(void) {
+/* The sibling Python test lays out the actual release blobs and manifest.
+   Only catalog.json is absent. This exercises full-sized digest, parser and
+   HTTP missing-index paths without making copies of the checked-in media. */
+static void check_shipped_catalog(unsigned missing) {
+    assert(missing < ACTIVE_COUNT && !strcmp(active_entries[missing].name, "catalog.json"));
+    assert(zld_card_session_start());
+    FILE *file = fopen("release.idx", "rb");
+    assert(file && !fseek(file, 0, SEEK_END));
+    long size = ftell(file);
+    assert(size > 0 && size <= MAX_INDEX_SIZE && !fseek(file, 0, SEEK_SET));
+    char *manifest = malloc(size);
+    assert(manifest && fread(manifest, 1, size, file) == (size_t)size);
+    assert(!fclose(file));
+    httpd_req_t req = request(manifest, size, ZLD_GENERATION);
+    response(prepare, &req, "200");
+    char expected[16];
+    snprintf(expected, sizeof(expected), "%u\n", missing);
+    assert(!strcmp(req.response, expected));
+    free(manifest);
+    printf("Verified the device index and missing-file response for all %zu release files.\n", ACTIVE_COUNT);
+}
+
+int main(int argc, char **argv) {
     allow=authorize;
+    if (argc == 2) {
+        check_shipped_catalog((unsigned)strtoul(argv[1], NULL, 10));
+        return 0;
+    }
+    assert(argc == 1);
     assert(mkdir("card",0777)==0);
     assert(zld_card_session_start() && zld_card_verify() && zld_card_online());
     char ah[65], bh[65], first[256], second[256], gen2[65], image_sha[65], path[PATH_CAP];
