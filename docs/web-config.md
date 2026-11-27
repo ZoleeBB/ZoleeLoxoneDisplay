@@ -13,7 +13,7 @@ A hálózathoz csatlakozott panel a saját IP-címét mutatja. Nyisd meg ezt a c
 
 ## Lapok és kezelőszervek
 
-Legfeljebb nyolc lap rendezhető sorba. A **Lapfül** gombbal létrehozott lap nevet és fülikont kap. Az **Okosotthon** laptípus saját háttérszínt vagy SD-képet, valamint legfeljebb 12 elemet fogad. A fel/le nyilak a kijelzőn látható sorrendet módosítják. A törléshez és egy tartalommal rendelkező lap típusváltásához a szerkesztő megerősítést kér. [Képtár és fülikonok](keptar.md)
+Legfeljebb nyolc lap rendezhető sorba. A **Lapfül** gombbal létrehozott lap nevet és fülikont kap. Az **Okosotthon** laphoz a színválasztóval egyszínű hátteret állíthatsz be, vagy választhatsz a 32 tájkép és a 32 egyszerű minta közül. Egyszínű háttérnél a panel a mezők színét is ebből az árnyalatból számítja. A világosabb alapszíneket sötétíti, a nagyon sötéteket világosítja. Egy ilyen lapon legfeljebb 12 elem helyezhető el. A fel/le nyilak a kijelzőn látható sorrendet módosítják. A törléshez és egy tartalommal rendelkező lap típusváltásához a szerkesztő megerősítést kér. [Képtár és fülikonok](keptar.md)
 
 Egyetlen elem teljes lapos kezelőnézetet kap. Több elemnél listából nyithatod meg a kívánt vezérlőt. A választó a funkcióhoz használható típusokat kínálja a Miniserver adatlistájából.
 
@@ -49,7 +49,7 @@ Válassz minden használt méréshez egy Loxone-állapotot, majd add meg a szorz
 
 A **Kijelző** fülön külön állítható a nappali és az éjszakai fényerő 1–100% között. Az éjszakai módot helyi kezdő- és végidő, illetve Loxone-állapot vezérelheti. Időzítéshez a készülék a Budapest szerinti helyi időt használja.
 
-A **Képernyőkímélő késleltetése** az utolsó érintéstől számított másodperc. Üres mező vagy `0` kikapcsolja. Pozitív értéknél a panel az éjszakai fényerőre vált, nagy órát és halványított fülikonokat mutat. Az első érintés visszahozza az aktív lapot.
+A **Képernyőkímélő késleltetése** az utolsó érintéstől számított másodperc. Üres mező vagy `0` kikapcsolja. Pozitív értéknél a panel az éjszakai fényerőre vált, félkövér órát, halványított fülikonokat és egyszínű alsó márkafeliratot mutat. Az első érintés visszahozza az aktív lapot.
 
 A **Kaputelefon** fül külön engedélyezhető. Az induló hangjelzés **Csőharang**, a **Néma** opció kikapcsolja. A kapunyitás, a videó és a hang beállításai a [kaputelefon útmutatójában](kaputelefon.md) találhatók.
 

@@ -34,9 +34,9 @@ A három előnézetet a firmware saját LVGL-felülete rajzolta mintaadatokkal. 
 | Energiaáramlás | A négyzetes 4B Slave nappali és éjszakai ábrája a hálózat, az akkumulátor, a napelem és a ház közötti áramlást mutatja. A jelek az adott energiafülhöz rendelhetők. |
 | Kaputelefon | Csengetéskor a panel megmutatja az élőképet és a beszélgetés gombját. Beállított kimenet esetén a kapu is nyitható. A kaputelefon bekapcsolása és a média használata külön lépés, a nagy pufferek híváskor foglalódnak le. |
 
-**Megjelenés.** Nyolc fület állíthatsz össze, vezérlőfülenként legfeljebb tizenkét elemmel. A fülikonokhoz 84 monokróm piktogram, a szobahátterekhez grafikus színválasztó és 32 képes miniatűr áll rendelkezésre. A képtárban balatoni és dunakanyari ihletésű tájak, valamint eltérő színvilágú grafikák is vannak. [Háttérképek és ikonok előnézete](docs/keptar.md)
+**Megjelenés.** Nyolc fület állíthatsz össze, vezérlőfülenként legfeljebb tizenkét elemmel. A fülekhez 84 monokróm ikonból választhatsz. A szobaháttérhez 32 tájkép és 32 egyszerű mintázat áll rendelkezésre. Egyszínű lapnál a mezők a kiválasztott szín sötétebb árnyalatát kapják. Nagyon sötét háttéren a panel világosabb árnyalatot használ, hogy a gombok és a sorok körvonala jól látszódjon. [Háttérképek és ikonok előnézete](docs/keptar.md)
 
-**Éjszakai használat.** Az éjszakai fényerőt Miniserver-jel vagy helyi időzítés kapcsolja. Ettől függetlenül beállítható az inaktivitási idő. Ha letelik, nagy óra és halvány fülsor jelenik meg. Az első érintés felébreszti a panelt. Az időkorlát üresen hagyva vagy nullára állítva kikapcsolja az automatikus képernyőkímélőt.
+**Éjszakai használat.** Az éjszakai fényerőt Miniserver-jel vagy helyi időzítés kapcsolja. Ettől függetlenül beállítható az inaktivitási idő. Ha letelik, a halvány fülsor alatt nagy, félkövér óra jelenik meg. Legalul az egyszínű „Zolee LOXONE Display” felirat látható a Loxone emblémájával. Az első érintés felébreszti a panelt. Az időkorlát üresen hagyva vagy nullára állítva kikapcsolja az automatikus képernyőkímélőt.
 
 ![A webes háttérválasztó mintabeállítással](docs/images/admin-background-picker.jpg)
 
@@ -50,7 +50,7 @@ A három előnézetet a firmware saját LVGL-felülete rajzolta mintaadatokkal. 
 | [Miniserver](docs/miniserver.md) | Hitelesítés, struktúra, állapotok, parancsok és kapcsolatvesztés |
 | [Helyi konfiguráció](docs/web-config.md) | Oldalszerkesztő, blokkok, háttér, érték-hozzárendelések és éjszakai profil |
 | [Kaputelefon](docs/kaputelefon.md) | Gen2 MJPEG, SIP/RTP, csengőhang és kapunyitás |
-| [Képtár](docs/keptar.md) | Mind a 32 háttér és 84 ikon, képformátumok és források |
+| [Képtár](docs/keptar.md) | A 64 háttér és a 84 ikon, képformátumok és források |
 | [Fejlesztési terv](docs/fejlesztesi-terv.md) | Mérföldkövek és valós készüléken elvégzendő próbák |
 
 A projekt első fejlesztési ága az **INIT**. A firmware és az SD-csomag profil szerinti párokban érhető el a sikeres fordítások mellékletei között. A hardverleírás a Waveshare adataira épül, a kezelési minta a Loxone Touch Pure Displayt követi. A banner projekthez készült látványterv.

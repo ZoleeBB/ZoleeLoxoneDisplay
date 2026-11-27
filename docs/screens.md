@@ -14,7 +14,9 @@ A felső ikonsoron érintsd meg a kívánt helyiséget vagy funkciót. Hat vagy 
 
 A világítási lista egyszerre hat hangulatot mutat. A többi az **Előző** és a **Tovább** gombbal érhető el. A részletes kimenetkezelő a tényleges körök alapján kínál kapcsolót, fényerőt, színt vagy színhőmérsékletet. A színtárcsa a részletes nézettel együtt szabadul fel. A kapcsoló, az időzített kapcsoló, a redőny, a motoros ablak és a kapu a blokk visszajelzését és a parancshoz tartozó jogosultságot követi.
 
-A webes szerkesztőben legfeljebb nyolc lapot készíthetsz, normál laponként tizenkét elemmel. A fül ikonját és a lap saját színét vagy háttérképét ott választhatod ki. [Webes beállítások](web-config.md)
+A webes szerkesztőben legfeljebb nyolc lapot készíthetsz, normál laponként tizenkét elemmel. Ugyanitt választhatod ki a fülikont és az oldal háttérképét vagy alapszínét. Egyszínű oldalon a sorok és a kezelőmezők a háttérből képzett árnyalatot kapnak. Az alábbi képen a homokszínű és a mályva lapon sötétebbek a mezők, az éjkék lapon világosabbak. A feliratok színét a panel a mező fényességéhez igazítja. [Webes beállítások](web-config.md)
+
+![Azonos szobavezérlők homokszínű, mályva és éjkék háttéren](images/panel-colors.jpg)
 
 ## Energiaáramlás és mai összesítő
 
@@ -32,7 +34,7 @@ A pénzügyi becslés az elődprojekt induló díjaival, **65 Ft/kWh vételi ár
 
 ![Készenléti óra halványan látható ikonsorral](images/panel/standby.png)
 
-A nappali és az éjszakai fényerő külön állítható. Az éjszakai mód kezdő és befejező időponttal vagy Miniserver-értékkel vezérelhető. Az időzítő a budapesti helyi időt és az óraátállást követi. A **képernyőkímélő** ettől független. A megadott tétlenségi idő után lekapcsolja a vezérlőket, éjszakai fényerőt választ és nagy órát jelenít meg. Az első érintés visszahozza az előző lapot. Nulla másodperc kikapcsolja az automatikus képernyőkímélőt. A bejövő kapucsengés felébreszti a kijelzőt.
+A nappali és az éjszakai fényerő külön állítható. Az éjszakai mód kezdő és befejező időponttal vagy Miniserver-értékkel vezérelhető. Az időzítő a budapesti helyi időt és az óraátállást követi. A **képernyőkímélő** ettől független. A megadott tétlenségi idő után lekapcsolja a vezérlőket, éjszakai fényerőt választ és nagy, félkövér órát jelenít meg. Alul a „Zolee LOXONE Display” felirat látható. Középen az eredeti LOXONE logó a szomszédos két szó színét kapja. Az első érintés visszahozza az előző lapot. Nulla másodperc kikapcsolja az automatikus képernyőkímélőt. A bejövő kapucsengés felébreszti a kijelzőt.
 
 ## Első bekapcsolás
 
