@@ -127,7 +127,9 @@ static esp_err_t start_ethernet(void)
     esp_eth_phy_t *phy = esp_eth_phy_new_ip101(&phy_cfg);
     esp_eth_handle_t driver = NULL;
     esp_eth_netif_glue_handle_t glue = NULL;
-    esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
+    esp_netif_inherent_config_t base = ESP_NETIF_INHERENT_DEFAULT_ETH();
+    base.route_prio = 120;
+    esp_netif_config_t cfg = {.base = &base, .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH};
     esp_err_t error = ESP_ERR_NO_MEM;
     if (!mac || !phy)
         goto fail;
