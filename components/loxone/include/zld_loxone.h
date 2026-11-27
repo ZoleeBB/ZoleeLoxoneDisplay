@@ -8,6 +8,8 @@ esp_err_t zld_loxone_start(bool (*network_ready)(void));
  * törölheti a két jelszót és a JSON-t. Foglalt sornál a hívó újrapróbál. */
 esp_err_t zld_loxone_configure(const cJSON *panel, const char *password, const char *camera_password);
 cJSON *zld_loxone_catalog(void);
+esp_err_t zld_loxone_refresh(void);
+bool zld_loxone_refreshing(void);
 bool zld_loxone_status(char *out, size_t size);
 unsigned zld_loxone_revision(void);
 bool zld_loxone_card(const char *id, lx_home_value_t *out, bool *supported);

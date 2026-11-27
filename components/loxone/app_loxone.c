@@ -36,6 +36,13 @@ typedef struct { int type; size_t length; unsigned char *data; } message_t;
 
 static _Atomic(SemaphoreHandle_t) s_lock;
 static atomic_flag s_starting = ATOMIC_FLAG_INIT;
+enum { CATALOG_IDLE, CATALOG_REQUESTED, CATALOG_LOADING };
+static atomic_int s_refresh;
+static void finish_refresh(void)
+{
+    int loading = CATALOG_LOADING;
+    atomic_compare_exchange_strong(&s_refresh, &loading, CATALOG_IDLE);
+}
 static QueueHandle_t s_messages, s_requests, s_home_commands;
 static panel_profile_t *s_profile;
 static bool (*s_network_ready)(void);
@@ -603,9 +610,12 @@ static void worker(void *arg)
             if (!same_login) mbedtls_platform_zeroize(token, sizeof(token));
             failures = 0;
         }
+        int requested = CATALOG_REQUESTED;
+        atomic_compare_exchange_strong(&s_refresh, &requested, CATALOG_LOADING);
         const lx_config_t *active = &s_profile->connection;
         if (!active->host[0] || !active->username[0] || !active->password[0] || !s_network_ready()) {
             status("A hálózati kapcsolatra vagy a Miniserver beállításaira vár.");
+            finish_refresh();
             vTaskDelay(pdMS_TO_TICKS(250));
             continue;
         }
@@ -624,10 +634,12 @@ static void worker(void *arg)
         xSemaphoreGive(s_lock);
         bool audio_pending = !app_loxone_audio_session(active->username, token, true);
         status("Kapcsolódva a Miniserverhez.");
+        finish_refresh();
         mark_response();
         int64_t heartbeat = s_last_response;
         failures = 0;
-        while (!s_dead && s_network_ready() && !uxQueueMessagesWaiting(s_requests)) {
+        while (!s_dead && s_network_ready() && !uxQueueMessagesWaiting(s_requests) &&
+               atomic_load(&s_refresh) != CATALOG_REQUESTED) {
             message_t m;int64_t now=esp_timer_get_time();
             if(xQueueReceive(s_messages,&m,pdMS_TO_TICKS(100))==pdTRUE) {
                 mark_response();
@@ -653,13 +665,15 @@ static void worker(void *arg)
         }
         status("Megszakadt a Loxone adatkapcsolat. Újracsatlakozás...");
 retry:
+        finish_refresh();
         invalidate();
         close_connection();
         s_session_config = NULL;
         if (failures < 5) ++failures;
         unsigned delay = 1U << failures;
         if (delay > 30) delay = 30;
-        for (unsigned i=0; i<delay*10 && !uxQueueMessagesWaiting(s_requests); ++i)
+        for (unsigned i=0; i<delay*10 && !uxQueueMessagesWaiting(s_requests) &&
+             atomic_load(&s_refresh) != CATALOG_REQUESTED; ++i)
             vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -1138,7 +1152,8 @@ cJSON *zld_loxone_catalog(void)
     /* Only the editor's display fields are exported. Native metadata and
      * potentially large nested block snapshots remain in the worker. */
     static const char *const keys[] = {"uuid", "control_uuid", "name", "type", "state",
-                                        "room", "category", "action_uuid", "secured"};
+                                        "room", "category", "action_uuid", "secured", "lighting_blocked", "irc_blocked",
+                                        "shading_blocked", "controls_type", "controls_blocked"};
     xSemaphoreTake(s_lock, portMAX_DELAY);
     const cJSON *row;
     cJSON_ArrayForEach(row, s_catalog) {
@@ -1164,6 +1179,23 @@ cJSON *zld_loxone_catalog(void)
     }
     xSemaphoreGive(s_lock);
     return result;
+}
+
+bool zld_loxone_refreshing(void)
+{
+    return atomic_load(&s_refresh) != CATALOG_IDLE;
+}
+
+esp_err_t zld_loxone_refresh(void)
+{
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool ready = s_profile && s_profile->connection.host[0] &&
+                 s_profile->connection.username[0] && s_profile->connection.password[0];
+    int idle = CATALOG_IDLE;
+    if (ready) atomic_compare_exchange_strong(&s_refresh, &idle, CATALOG_REQUESTED);
+    xSemaphoreGive(s_lock);
+    return ready ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 bool zld_loxone_energy(unsigned tab, lx_values_t *out)
