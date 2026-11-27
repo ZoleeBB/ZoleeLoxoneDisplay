@@ -9,3 +9,6 @@ typedef pthread_mutex_t portMUX_TYPE;
 #define pdPASS 1
 
 typedef uint32_t TickType_t;
+#define pdTRUE 1
+#define portMAX_DELAY UINT32_MAX
+#define tskNO_AFFINITY UINT32_MAX

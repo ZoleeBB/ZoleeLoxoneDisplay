@@ -8,3 +8,5 @@ void vTaskDelete(void *task);
 
 typedef void *TaskHandle_t;
 void vTaskSuspend(TaskHandle_t task);
+unsigned ulTaskNotifyTake(int clear, unsigned ticks);
+void xTaskNotifyGive(TaskHandle_t task);

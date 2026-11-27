@@ -3,6 +3,8 @@
 #include "app_intercom_audio.h"
 #include "app_loxone.h"
 #include "door_ringtone.h"
+#include "board_click.h"
+#include "board_sound.h"
 #include "esp_aec.h"
 #include "esp_codec_dev.h"
 #include "esp_heap_caps.h"
@@ -21,6 +23,27 @@ static unsigned created, deleted, closes, volume, writes, loads, cancel_after, a
 static unsigned answer_on_snapshot;
 static uint8_t *loaded;
 static const char *expected_name;
+static void (*idle_worker)(void *);
+static jmp_buf drained;
+static bool idle_run, inject_click, heard_click, expect_quiet, muted_media_test, muted_media_audible;
+static unsigned buffers_requested, idle_writes, inits;
+unsigned ulTaskNotifyTake(int clear, unsigned ticks)
+{
+    assert(idle_run && clear && ticks);
+    if (buffers_requested) { buffers_requested=0; return 1; }
+    longjmp(drained, 1);
+}
+void xTaskNotifyGive(TaskHandle_t task)
+{
+    assert(task == (void *)2);
+    ++buffers_requested;
+}
+static void drain_idle(void)
+{
+    idle_run=true;
+    if (!setjmp(drained)) idle_worker(NULL);
+    idle_run=false;
+}
 
 /* Catch accidental allocation of the SIP, jitter or AEC session on a bell. */
 void *__wrap_calloc(size_t n, size_t size) { (void)n; (void)size; abort(); }
@@ -46,6 +69,12 @@ bool app_loxone_intercom_call_permitted(unsigned revision, bool active)
 int xTaskCreatePinnedToCoreWithCaps(void (*fn)(void *), const char *name, unsigned stack, void *arg,
                                     unsigned priority, void *out, unsigned core, unsigned caps)
 {
+    if (!strcmp(name,"touch_sound")) {
+        assert(!arg && !idle_worker && (caps & MALLOC_CAP_SPIRAM));
+        idle_worker=fn;
+        *(TaskHandle_t *)out=(void *)2;
+        return pdPASS;
+    }
     assert(!scheduled && !arg && !strcmp(name, "intercom_audio") && core == 0 && priority == 7);
     if (next_call) {
         assert(!speaker_open && !loaded);
@@ -84,7 +113,7 @@ uint8_t *door_ringtone_load(const char *name, size_t *size, app_ringtone_load_st
     return loaded;
 }
 esp_err_t bsp_i2c_init(void) { return ESP_OK; }
-esp_err_t bsp_audio_init_voice_24k(void) { return ESP_OK; }
+esp_err_t bsp_audio_init_voice_24k(void) { ++inits; return ESP_OK; }
 esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void) { return (void *)1; }
 int esp_codec_dev_open(esp_codec_dev_handle_t h, esp_codec_dev_sample_info_t *format)
 {
@@ -105,13 +134,32 @@ int esp_codec_dev_set_out_mute(esp_codec_dev_handle_t h, bool mute)
 }
 int esp_codec_dev_set_out_vol(esp_codec_dev_handle_t h, int v)
 {
-    assert(h == (void *)1 && (unsigned)v == bell.config.speaker_volume);
+    assert(h == (void *)1 && (idle_run || muted_media_test ? v == 54 : (unsigned)v == bell.config.speaker_volume));
     volume = v; return ESP_OK;
 }
 int esp_codec_dev_write(esp_codec_dev_handle_t h, void *samples, int size)
 {
-    assert(h == (void *)1 && !muted && volume && speaker_open && loaded && size % 4 == 0);
-    for (int i = 0; i < size / 2; ++i) assert(((int16_t *)samples)[i] == 4096);
+    assert(h == (void *)1 && !muted && volume && speaker_open && size % 4 == 0);
+    const int16_t *pcm=samples;
+    bool audible=false;
+    for (int i=0;i<size/2;i+=2) {
+        assert(pcm[i]==pcm[i+1]);
+        int delta=pcm[i]-(idle_run || muted_media_test ? 0 : 4096);
+        assert(abs(delta)<=1320);
+        audible |= delta!=0;
+    }
+    if (idle_run) {
+        if (audible) ++idle_writes;
+        return ESP_OK;
+    }
+    if (muted_media_test) {
+        muted_media_audible=audible;
+        return ESP_OK;
+    }
+    assert(loaded);
+    if (inject_click) { inject_click=false; board_sound_touch(); }
+    if (expect_quiet) assert(!audible);
+    heard_click |= audible;
     ++writes;
     if (answer_after == writes) assert(app_intercom_audio_request(true, bell.revision) == ESP_OK);
     if (cancel_after == writes) app_intercom_audio_gate_opened(bell.revision);
@@ -133,7 +181,7 @@ void aec_process(aec_handle_t *h,int16_t *a,int16_t *b,int16_t *c) { (void)h;(vo
 
 static void begin_bell(const char *name, unsigned percent, bool repeat)
 {
-    assert(!loaded && !speaker_open && !scheduled && created == deleted);
+    assert(!loaded && !scheduled && created == deleted);
     bell.ringing = false;
     app_intercom_audio_poll();
     ++bell.revision;
@@ -163,7 +211,41 @@ static void check_once(unsigned expected_writes)
 }
 int main(void)
 {
-    assert(app_intercom_audio_start() == ESP_OK);
+    assert(board_sound_start()==ESP_OK);
+    assert(inits==0 && !speaker_open);
+    uint16_t held=0;
+    assert(board_click_contacts(&held,0)==0);
+    assert(board_click_contacts(&held,1)==1);
+    board_sound_touch();
+    for (int n=0;n<12;n++) assert(board_click_contacts(&held,1)==0);
+    assert(board_click_contacts(&held,3)==1); /* second finger while first held */
+    board_sound_touch();
+    assert(board_click_contacts(&held,2)==0); /* lifting the first finger */
+    assert(board_click_contacts(&held,0)==0);
+    drain_idle();
+    assert(inits==1 && idle_writes==2 && speaker_open);
+
+    /* Media takes the idle speaker without opening a duplicate handle.
+     * A press between sequential ringtone frames changes the next one only. */
+    assert(app_intercom_audio_start()==ESP_OK);
+    begin_bell("quiet-touch.wav",61,false);
+    inject_click=true;
+    check_once(2);
+    assert(heard_click && inits==1);
+
+    muted_media_test=true; /* A muted call sends no remote audio, but a tap remains audible. */
+    assert(board_sound_media_open(0)==ESP_OK);
+    int16_t incoming[2*160];
+    for (unsigned i=0;i<320;++i) incoming[i]=16000;
+    assert(board_sound_media_write(incoming,160)==ESP_OK && !muted_media_audible);
+    board_sound_touch();
+    for (unsigned i=0;i<320;++i) incoming[i]=16000;
+    assert(board_sound_media_write(incoming,160)==ESP_OK && muted_media_audible);
+    board_sound_media_close();
+    muted_media_test=false;
+    expect_quiet=true;
+    assert(created==deleted);
+    created=deleted=0;
     app_intercom_audio_poll();
     assert(!created && !loaded);
     begin_bell("", 65, true);
