@@ -266,6 +266,21 @@ function renderDisplay(){
     input(night,'Éjszaka kezdete',d,'nightStart','time'); input(night,'Éjszaka vége',d,'nightEnd','time');
   } else night.append(field('Éjszakai mód állapota',mappingInput(d,'nightUuid',app.controls,'uuid')));
 }
+function uploadToneZip(file,onProgress){
+  return new Promise((resolve,reject)=>{
+    const request=new XMLHttpRequest();
+    request.open('POST','/api/ringtones/upload');
+    request.setRequestHeader('Content-Type','application/zip');
+    request.setRequestHeader('X-Panel-Request','1');
+    request.upload.onprogress=event=>onProgress(event.loaded,file.size);
+    request.onload=()=>{
+      if(request.status===200)resolve();
+      else reject(Error(request.responseText||'A csengőhangcsomag telepítése sikertelen.'));
+    };
+    request.onerror=()=>reject(Error('Megszakadt a kapcsolat a kijelzővel. A feltöltést megismételheted.'));
+    request.send(file);
+  });
+}
 function renderRingtones(config){
   const btn=button('Csengőhangcsomag letöltése',download),p=panel('Csengőhangok',btn),g=grid(p);
   const chooser=el('select'), muted=el('option','','Néma');
@@ -317,10 +332,51 @@ function renderRingtones(config){
       chooser.replaceChildren(...options);
     chooser.value=config.ringtone;refreshPreview();
   }
-  let loading=false;
+  const local=el('details','local-zip'),summary=el('summary','','Helyi ZIP telepítése');
+  const localForm=el('div','stack'),file=el('input'),upload=button('ZIP feltöltése',installLocal);
+  file.type='file';file.accept='.zip,application/zip';
+  const localStatus=el('p','hint');localStatus.setAttribute('role','status');
+  const meter=el('progress');meter.max=100;meter.hidden=true;meter.setAttribute('aria-label','ZIP-feltöltés');
+  localForm.append(field('Csengőhangcsomag (ZIP, legfeljebb 8 MiB)',file),upload,meter,localStatus);
+  local.append(summary,localForm);p.append(local);
+  let loading=false,operation=false;
+  function setBusy(value){
+    operation=value;
+    btn.disabled=value;file.disabled=value;upload.disabled=value||!!fileError(file.files[0]);
+  }
+  function fileError(selected){
+    if(!selected)return 'Válassz egy ZIP-csomagot.';
+    if(!/\.zip$/i.test(selected.name))return 'ZIP kiterjesztésű hangcsomagot válassz.';
+    if(selected.size<22 || selected.size>8*1024*1024)return 'A ZIP mérete 22 bájt és 8 MiB között lehet.';
+    return '';
+  }
+  file.onchange=()=>{
+    const selected=file.files[0],error=selected?fileError(selected):'';
+    localStatus.textContent=error;localStatus.classList.toggle('error',!!error);meter.hidden=true;
+    upload.disabled=operation||!selected||!!error;
+  };
+  async function installLocal(){
+    if(operation)return;
+    const selected=file.files[0],error=fileError(selected);
+    localStatus.classList.toggle('error',!!error);
+    if(error){localStatus.textContent=error;return;}
+    setBusy(true);meter.hidden=false;meter.value=0;localStatus.textContent='Feltöltés indítása…';
+    try{
+      await uploadToneZip(selected,(received,total)=>{
+        if(!local.isConnected)return;
+        meter.value=Math.min(100,Math.round(100*received/total));
+        localStatus.textContent=received<total?'Feltöltés: '+meter.value+'%':'A panel ellenőrzi és telepíti a csomagot…';
+      });
+      file.value='';meter.value=100;localStatus.textContent='A helyi csengőhangcsomag telepítve.';
+      await load();
+    }catch(e){
+      localStatus.textContent=e.message;localStatus.classList.add('error');meter.hidden=true;
+      setBusy(false);
+    }
+  }
   async function load(){
     if(loading || !p.isConnected) return;
-    loading=true;btn.disabled=true;
+    loading=true;setBusy(true);
     try{
       const state=await getJSON('/api/ringtones');
       if(!p.isConnected) return;
@@ -335,21 +391,21 @@ function renderRingtones(config){
         state.status==='ready'?'Telepített csengőhangok: '+(state.items||[]).length+version:
         'A kijelző a Zolee Energy Flow Display hangcsomagját közvetlenül az SD-kártyára tölti.';
       btn.textContent=running?'Letöltés folyamatban…':state.status==='ready'?'Csengőhangcsomag frissítése':'Csengőhangcsomag letöltése';
-      btn.disabled=running;
+      setBusy(running);
       if(running)setTimeout(load,1000);
     }catch(e){
-      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;btn.disabled=false;}
+      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;setBusy(false);}
     }finally{loading=false;}
   }
   async function download(){
     if(btn.disabled) return;
-    btn.disabled=true;hint.classList.remove('error');hint.textContent='Letöltés indítása…';
+    setBusy(true);hint.classList.remove('error');hint.textContent='Letöltés indítása…';
     try{
       const response=await fetch('/api/ringtones/download',{method:'POST',headers:{'X-Panel-Request':'1'}});
       if(!response.ok)throw Error(await response.text());
       await load();
     }catch(e){
-      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;btn.disabled=false;}
+      if(p.isConnected){hint.classList.add('error');hint.textContent=e.message;setBusy(false);}
     }
   }
   setChoices([{name:'tubular-chime.wav',label:'Csőharang'}]);load();

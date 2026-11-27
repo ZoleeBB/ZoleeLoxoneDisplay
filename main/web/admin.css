@@ -9,3 +9,9 @@ label.field{display:flex;flex-direction:column;gap:7px;min-width:0}.caption{font
 #pickCategory [aria-pressed=true]{border-color:var(--lime);background:var(--lime);color:#192319}
 
 audio{width:min(100%,430px)}
+
+.local-zip{margin-top:18px;border-top:1px solid var(--border);padding-top:12px}
+.local-zip summary{cursor:pointer;color:var(--lime)}
+.local-zip .stack{margin-top:12px;max-width:430px}
+.local-zip button{justify-self:start}
+.local-zip progress{width:100%;accent-color:var(--lime)}
