@@ -9,12 +9,11 @@
 
 uint8_t *door_ringtone_load(const char *name, size_t *size, app_ringtone_load_status_t *status)
 {
-    char logical[90], path[256];
+    char path[256];
     *status = APP_RINGTONE_LOAD_INVALID;
     *size = 0;
     if (!app_ringtone_name(name)) return NULL;
-    snprintf(logical, sizeof(logical), "ringtones/%s", name);
-    if (!zld_asset_path(logical, path, sizeof(path))) {
+    if (!zld_ringtone_path(name, path, sizeof(path))) {
         *status = APP_RINGTONE_LOAD_MISSING;
         return NULL;
     }

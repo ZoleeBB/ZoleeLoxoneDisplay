@@ -1,4 +1,5 @@
 #include "zld_update.h"
+#include "tones.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -130,9 +131,17 @@ static atomic_int cloud_state;
 static atomic_uint cloud_position;
 static zld_update_authorize_t allow;
 static char staged[65];
-static bool reboot_pending;
+static atomic_bool reboot_pending;
 static esp_timer_handle_t restart_timer;
 extern const char update_html[] asm("_binary_update_html_start");
+
+bool zld_update_enter(void)
+{
+    int idle = 0;
+    return !atomic_load(&reboot_pending) && atomic_compare_exchange_strong(&update_users, &idle, 1);
+}
+
+void zld_update_leave(void) { atomic_fetch_sub(&update_users, 1); }
 
 static bool blob_path(const asset_entry_t *entry, char *out, size_t cap)
 {
@@ -284,7 +293,7 @@ static esp_err_t fail(httpd_req_t *req, const char *status, const char *message)
 static bool permitted(httpd_req_t *req, bool write)
 {
     if (!allow(req, write)) return false;
-    if (write && atomic_load(&cloud_state) == CLOUD_RUNNING) {
+    if (write && (atomic_load(&cloud_state) == CLOUD_RUNNING || zld_tones_busy())) {
         fail(req, "409 Conflict", "A képek letöltése már folyamatban van.");
         return false;
     }
@@ -655,5 +664,5 @@ esp_err_t zld_update_register(httpd_handle_t server, zld_update_authorize_t auth
             return err;
         }
     }
-    return ESP_OK;
+    return zld_tones_register(server, authorize);
 }

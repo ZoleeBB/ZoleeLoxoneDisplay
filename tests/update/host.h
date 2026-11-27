@@ -34,6 +34,8 @@ typedef struct {
     char response[2048], status[96];
 } httpd_req_t;
 typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); void *user_ctx; } httpd_uri_t;
+static bool zld_tones_busy(void) {return false;}
+#define zld_tones_register(a,b) (0)
 #define HTTP_GET 1
 #define HTTP_POST 2
 static int httpd_req_get_hdr_value_str(httpd_req_t *r, const char *key, char *value, size_t cap) {

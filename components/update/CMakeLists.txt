@@ -1,7 +1,9 @@
-idf_component_register(SRCS "zld_update.c"
+idf_component_register(SRCS "zld_update.c" "tones/tones.c" "tones/tone_source.c" "tones/tone_store.c"
+         "tones/app_ringtone_zip.c" "tones/app_ringtone_wav.c"
     INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "tones"
     REQUIRES esp_http_server
-    PRIV_REQUIRES esp_http_client app_update esp_app_format esp_timer mbedtls board fatfs
+    PRIV_REQUIRES json espressif__zlib esp_http_client app_update esp_app_format esp_timer mbedtls board fatfs
     EMBED_TXTFILES "update.html")
 
 set(card "${CMAKE_CURRENT_LIST_DIR}/../../sdcard")

@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS "app_intercom.c" "app_intercom_stream.c" "app_intercom_i2s.c"
-         "app_intercom_audio.c" "app_intercom_audio_protocol.c" "app_ringtone_wav.c" "door_ringtone.c"
+         "app_intercom_audio.c" "app_intercom_audio_protocol.c" "door_ringtone.c"
     INCLUDE_DIRS "include"
     REQUIRES loxone
     PRIV_REQUIRES update esp_driver_jpeg esp_driver_i2s esp_timer esp_http_client

@@ -22,6 +22,8 @@ bool zld_assets_check(void);
 bool zld_assets_ready(void);
 /* Lookup immutable, absolute POSIX path for firmware's logical file. */
 bool zld_asset_path(const char *logical, char *out, size_t capacity);
+/* Installed official ringtone, with the built-in chime as fallback. */
+bool zld_ringtone_path(const char *name, char *out, size_t capacity);
 typedef bool (*zld_update_authorize_t)(httpd_req_t *req, bool write);
 esp_err_t zld_update_register(httpd_handle_t server, zld_update_authorize_t authorize);
 
