@@ -19,9 +19,15 @@ progress {display:block;width:100%;accent-color:#b5d998;margin:12px 0} #result {
 <h1>Frissítés</h1>
 <p id="device">Kijelző lekérdezése…</p>
 <section>
+<h2>Képek a kijelzőre</h2>
+<p>A kijelző közvetlenül a saját firmware-verziójához tartozó hiányzó képeket tölti le az SD-kártyára. Ehhez internetkapcsolat szükséges.</p>
+<button class="primary" id="download" disabled>Képcsomag letöltése az SD-kártyára</button>
+<p id="remoteStatus" role="status" aria-live="polite"></p>
+</section>
+<section>
 <h2>Telepítőcsomag</h2>
 <p>A firmware és a hozzá tartozó SD-fájlok egyetlen .zld csomagban érhetők el. Első üzembe helyezéskor használd a kijelzőre írt firmware-rel együtt kiadott csomagot.</p>
-<a id="release" hidden>Képcsomag letöltése a legfrissebb kiadásból ↗</a>
+<a id="release" hidden>A legfrissebb .zld csomag letöltése számítógépre ↗</a>
 </section>
 <section>
 <h2>SD-kártya és firmware</h2>
@@ -39,13 +45,15 @@ progress {display:block;width:100%;accent-color:#b5d998;margin:12px 0} #result {
 'use strict';
 const $ = id => document.getElementById(id);
 const decoder = new TextDecoder('utf-8', {fatal:true});
-let device, pack, busy = false;
+let device, pack, busy = false, polling;
 const say = message => { $('result').textContent = message };
 const read = async (file, start, end) => decoder.decode(await file.slice(start, end).arrayBuffer());
 function buttons() {
-  $('file').disabled = busy || !device;
-  $('seed').disabled = busy || !pack || pack.generation !== device.generation;
-  $('flash').disabled = busy || !pack;
+  const locked = busy || !device || device.cloudState === 1;
+  $('download').disabled = locked || !device.remote;
+  $('file').disabled = locked;
+  $('seed').disabled = locked || !pack || pack.generation !== device.generation;
+  $('flash').disabled = locked || !pack;
 }
 async function loadInfo() {
   const response = await fetch('/update/info', {cache:'no-store'});
@@ -57,6 +65,16 @@ async function loadInfo() {
   link.href = 'https://github.com/ZoleeBB/ZoleeLoxoneDisplay/releases/latest/download/ZoleeLoxoneDisplay-' +
     device.sku + '-' + device.silicon + '.zld';
   link.hidden = false;
+  const status = $('remoteStatus');
+  window.clearTimeout(polling);
+  if (device.cloudState === 1) {
+    status.textContent = 'A kártya előkészítése folyamatban · ' + device.position + '/' + device.count;
+    polling = window.setTimeout(() => loadInfo().catch(e => { status.textContent = e.message; }), 1500);
+  } else if (device.cloudState === 2) status.textContent = 'A kijelző képcsomagja használatra kész.';
+  else if (device.cloudState === 3) status.textContent =
+    'A letöltés megszakadt (' + device.position + '/' + device.count +
+    '). Próbáld újra, vagy válaszd a helyi .zld csomagot.';
+  else if (!device.remote) status.textContent = 'Ehhez a buildhez válaszd a helyi .zld csomagot.';
   buttons();
 }
 async function openPack(file, target) {
@@ -139,6 +157,16 @@ async function install(flash) {
   } catch (e) { say(e.message + ' A telepítés ugyanazzal a csomaggal folytatható.'); }
   finally { busy = false; buttons(); }
 }
+$('download').onclick = async () => {
+  if (busy) return;
+  busy = true; buttons();
+  try {
+    const response = await fetch('/update/download', {method:'POST', headers:{'X-Panel-Request':'1'}});
+    if (!response.ok) throw Error(await response.text());
+    await loadInfo();
+  } catch (e) { $('remoteStatus').textContent = e.message; }
+  finally { busy = false; buttons(); }
+};
 $('seed').onclick = () => install(false);
 $('flash').onclick = () => install(true);
 buttons();

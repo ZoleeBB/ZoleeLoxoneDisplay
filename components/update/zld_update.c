@@ -12,12 +12,19 @@
 
 #include "board.h"
 #include "esp_app_desc.h"
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "mbedtls/sha256.h"
 
-#define ROOT "/sdcard/zld"
+#ifndef ZLD_CARD_DIR
+#define ZLD_CARD_DIR "/sdcard"
+#endif
+#define ROOT ZLD_CARD_DIR "/zld"
 #define BLOBS ROOT "/blobs"
 #define STAGE ROOT "/stage.idx"
 #define PART ROOT "/transfer.tmp"
@@ -41,6 +48,9 @@ typedef struct {
 #define MARKER_PREFIX "ZLD-BUNDLE-1/" STR(BOARD_SKU) "/" BOARD_SILICON "/"
 static const char running_marker[] = MARKER_PREFIX ZLD_GENERATION "/END";
 static atomic_bool ready;
+enum { CLOUD_IDLE, CLOUD_RUNNING, CLOUD_OK, CLOUD_ERROR };
+static atomic_int cloud_state;
+static atomic_uint cloud_position;
 static zld_update_authorize_t allow;
 static char staged[65];
 static bool reboot_pending;
@@ -194,6 +204,10 @@ static esp_err_t fail(httpd_req_t *req, const char *status, const char *message)
 static bool permitted(httpd_req_t *req, bool write)
 {
     if (!allow(req, write)) return false;
+    if (write && atomic_load(&cloud_state) == CLOUD_RUNNING) {
+        fail(req, "409 Conflict", "A képek letöltése már folyamatban van.");
+        return false;
+    }
     if (write && reboot_pending) {
         fail(req, "409 Conflict", "A kijelző újraindul.");
         return false;
@@ -265,10 +279,13 @@ static esp_err_t page(httpd_req_t *req)
 static esp_err_t info(httpd_req_t *req)
 {
     if (!permitted(req, false)) return ESP_OK;
-    char result[256];
+    char result[320];
     snprintf(result, sizeof(result),
         "{\"sku\":\"" STR(BOARD_SKU) "\",\"silicon\":\"" BOARD_SILICON
-        "\",\"generation\":\"" ZLD_GENERATION "\",\"ready\":%s}", zld_assets_ready() ? "true" : "false");
+        "\",\"generation\":\"" ZLD_GENERATION "\",\"ready\":%s,\"remote\":%s,"
+        "\"cloudState\":%d,\"position\":%u,\"count\":%u}",
+        zld_assets_ready() ? "true" : "false", sizeof(ZLD_SOURCE_REV) == 41 ? "true" : "false",
+        atomic_load(&cloud_state), atomic_load(&cloud_position), (unsigned)ACTIVE_COUNT);
     httpd_resp_set_type(req, "application/json");
     /* Also ensures the compatibility record is part of every linked image. */
     httpd_resp_set_hdr(req, "X-Running-Bundle", running_marker);
@@ -304,6 +321,113 @@ static esp_err_t prepare(httpd_req_t *req)
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
+/* A power loss leaves either verified data or a retryable missing file. */
+static bool install_temp(const asset_entry_t *entry)
+{
+    char path[PATH_CAP], shard[sizeof(BLOBS) + 4];
+    snprintf(shard, sizeof(shard), BLOBS "/%.2s", entry->sha);
+    if (!mkdir_if_missing(shard) || !blob_path(entry, path, sizeof(path))) return false;
+    if (blob_ok(entry)) return unlink(PART) == 0;
+    if (unlink(path) && errno != ENOENT) return false;
+    return rename(PART, path) == 0;
+}
+
+typedef struct {
+    FILE *file;
+    size_t remaining;
+    bool error;
+    mbedtls_sha256_context hash;
+} download_t;
+
+static esp_err_t remote_event(esp_http_client_event_t *event)
+{
+    if (event->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
+    download_t *transfer = event->user_data;
+    if (!transfer->file || transfer->error) return ESP_FAIL;
+    size_t n = event->data_len;
+    if (n > transfer->remaining || fwrite(event->data, 1, n, transfer->file) != n ||
+        mbedtls_sha256_update(&transfer->hash, event->data, n)) {
+        transfer->error = true;
+        return ESP_FAIL;
+    }
+    transfer->remaining -= n;
+    return ESP_OK;
+}
+
+static bool download_entry(esp_http_client_handle_t client, download_t *transfer, const asset_entry_t *entry)
+{
+    char url[320], hex[65];
+    uint8_t raw[32];
+    int n = snprintf(url, sizeof(url),
+        "https://raw.githubusercontent.com/ZoleeBB/ZoleeLoxoneDisplay/" ZLD_SOURCE_REV "/sdcard/%s", entry->name);
+    if (n < 0 || (size_t)n >= sizeof(url) || esp_http_client_set_url(client, url) != ESP_OK) return false;
+    transfer->file = fopen(PART, "wb");
+    if (!transfer->file) return false;
+    transfer->remaining = entry->size;
+    transfer->error = false;
+    bool ok = !mbedtls_sha256_starts(&transfer->hash, 0) && esp_http_client_perform(client) == ESP_OK &&
+        esp_http_client_get_status_code(client) == 200 && !transfer->error && !transfer->remaining &&
+        !mbedtls_sha256_finish(&transfer->hash, raw);
+    if (fclose(transfer->file)) ok = false;
+    transfer->file = NULL;
+    if (ok) {
+        hex_digest(raw, hex);
+        ok = !strcmp(hex, entry->sha) && install_temp(entry);
+    }
+    if (!ok) unlink(PART);
+    return ok;
+}
+
+static void download_card(void *unused)
+{
+    (void)unused;
+    download_t transfer = {0};
+    mbedtls_sha256_init(&transfer.hash);
+    /* Reuse one TLS connection while fetching missing files at the same commit. */
+    const esp_http_client_config_t cfg = {
+        .url = "https://raw.githubusercontent.com/",
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .disable_auto_redirect = true,
+        .timeout_ms = 12000,
+        .buffer_size = 4096,
+        .event_handler = remote_event,
+        .user_data = &transfer,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    bool ok = client && mkdir_if_missing(ROOT) && mkdir_if_missing(BLOBS);
+    for (size_t i = 0; ok && i < ACTIVE_COUNT; ++i) {
+        atomic_store(&cloud_position, i + 1);
+        if (!blob_ok(&active_entries[i])) {
+            ok = download_entry(client, &transfer, &active_entries[i]);
+            if (!ok) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                ok = download_entry(client, &transfer, &active_entries[i]);
+            }
+        }
+    }
+    if (client) esp_http_client_cleanup(client);
+    mbedtls_sha256_free(&transfer.hash);
+    if (ok) ok = zld_assets_check();
+    atomic_store(&cloud_state, ok ? CLOUD_OK : CLOUD_ERROR);
+    vTaskDelete(NULL);
+}
+
+static esp_err_t fetch_card(httpd_req_t *req)
+{
+    if (!permitted(req, true)) return ESP_OK;
+    if (sizeof(ZLD_SOURCE_REV) != 41)
+        return fail(req, "409 Conflict", "Ehhez a helyi buildhez válaszd ki a .zld fájlt.");
+    staged[0] = 0;
+    atomic_store(&cloud_position, 0);
+    atomic_store(&cloud_state, CLOUD_RUNNING);
+    if (xTaskCreate(download_card, "sd_download", 8192, NULL, 4, NULL) != pdPASS) {
+        atomic_store(&cloud_state, CLOUD_ERROR);
+        return fail(req, "503 Service Unavailable", "Nincs elég memória a letöltés elindításához.");
+    }
+    httpd_resp_set_status(req, "202 Accepted");
+    return httpd_resp_sendstr(req, "OK");
+}
+
 static esp_err_t asset(httpd_req_t *req)
 {
     if (!staged_request(req)) return ESP_OK;
@@ -322,21 +446,15 @@ static esp_err_t asset(httpd_req_t *req)
     asset_entry_t entry;
     if (!found || !parse_line(line, &entry) || req->content_len != entry.size)
         return fail(req, "400 Bad Request", "Eltérő képméret vagy ismeretlen fájl.");
-    char path[PATH_CAP], shard[sizeof(BLOBS) + 4], digest[65];
-    snprintf(shard, sizeof(shard), BLOBS "/%.2s", entry.sha);
-    if (!mkdir_if_missing(shard) || !blob_path(&entry, path, sizeof(path)) ||
-        !receive_file(req, PART, digest))
+    char digest[65];
+    if (!receive_file(req, PART, digest))
         return fail(req, "503 Service Unavailable", "A fájlt nem sikerült a kártyára írni.");
     if (strcmp(digest, entry.sha)) {
         unlink(PART);
         return fail(req, "400 Bad Request", "Hibás fájlellenőrző összeg.");
     }
-    /* Retried request or duplicate content may already be present. */
-    if (blob_ok(&entry)) unlink(PART);
-    else {
-        if ((unlink(path) != 0 && errno != ENOENT) || rename(PART, path))
-            return fail(req, "503 Service Unavailable", "A fájl mentése sikertelen.");
-    }
+    if (!install_temp(&entry))
+        return fail(req, "503 Service Unavailable", "A fájl mentése sikertelen.");
     return httpd_resp_sendstr(req, "OK");
 }
 
@@ -422,6 +540,7 @@ esp_err_t zld_update_register(httpd_handle_t server, zld_update_authorize_t auth
     const httpd_uri_t routes[] = {
         {.uri="/update", .method=HTTP_GET, .handler=page},
         {.uri="/update/info", .method=HTTP_GET, .handler=info},
+        {.uri="/update/download", .method=HTTP_POST, .handler=fetch_card},
         {.uri="/update/prepare", .method=HTTP_POST, .handler=prepare},
         {.uri="/update/asset", .method=HTTP_POST, .handler=asset},
         {.uri="/update/seed", .method=HTTP_POST, .handler=seed},
