@@ -27,6 +27,18 @@ PALETTES = [
     ("forest-orbit", "Erdei pálya", "orbit", "172c2e", "326351", "86a880"),
     ("ochre-orbit", "Okkersárga", "orbit", "352e28", "7c6745", "c6b075"),
     ("azure-orbit", "Azúr", "orbit", "10283d", "315d79", "84b6c1"),
+    ("oat-linen", "Nyári lenvászon", "linen", "3d342a", "8f8067", "c8b599"),
+    ("petrol-linen", "Petrolkék szövet", "linen", "132d31", "3b686a", "70a5a1"),
+    ("berry-linen", "Szederszövet", "linen", "362535", "785468", "b794a4"),
+    ("walnut-slats", "Diófa lamellák", "slats", "291f1a", "70513f", "ae8665"),
+    ("graphite-slats", "Grafitlamellák", "slats", "1c252b", "45545b", "849097"),
+    ("sage-slats", "Zsályalamellák", "slats", "2a362e", "606f5d", "a7b59b"),
+    ("shell-terrazzo", "Kagylókő", "terrazzo", "443b36", "9c8776", "d8c0a3"),
+    ("mint-terrazzo", "Mentamozaik", "terrazzo", "30403c", "6f9282", "adc5af"),
+    ("night-terrazzo", "Éjféli mozaik", "terrazzo", "192533", "485e75", "8195ad"),
+    ("ember-tiles", "Parázscsempe", "tile", "452b2b", "895249", "be8070"),
+    ("lagoon-tiles", "Lagúnacsempe", "tile", "173534", "447473", "85aaa0"),
+    ("plum-tiles", "Szilvacsempe", "tile", "2e2330", "69536e", "a189a5"),
 ]
 
 
@@ -57,12 +69,51 @@ def render(style, hex_colors, seed):
             ridge = (.38 + .113*layer + (.026 + .009*layer)*np.sin((4.4 + layer*.4)*x + phase + layer)
                      + .022*np.sin(9*x + layer))
             tone = np.where(y > ridge, .67 - .125*layer - .08*(y-ridge), tone)
-    else:
+    elif style == "orbit":
         distance = np.hypot(x-(.98 + .18*np.sin(phase)), y-(.82 + .13*np.cos(phase)))
         tone = .21 + .34*x + .12*(1-y)
         for radius, gain in [(.96,.16), (.71,-.24), (.48,.19), (.27,-.16)]:
             delta = radius - distance
             tone += np.where(delta > 0, gain*np.exp(-np.maximum(delta,0)/.27), 0)
+
+    elif style == "linen":
+        warp = np.cos(2*np.pi*(x*66 + .06*np.sin(y*8 + phase)))
+        weft = np.cos(2*np.pi*(y*50 + .09*np.sin(x*7)))
+        tone = .44 + .09*(1-y) + .05*x + .045*warp + .039*weft + .028*warp*weft
+    elif style == "slats":
+        across = (.91*x + .34*y)*11 + .12*np.cos(phase)
+        fraction = across % 1
+        tone = (.52 + .08*(1-y) - .08*x - .26*np.exp(-(fraction/.045)**2)
+                + .13*np.exp(-((fraction-.11)/.085)**2) - .045*fraction
+                + .009*np.cos(2*np.pi*(3*across + .14*np.sin(5*y + phase))))
+    elif style == "terrazzo":
+        tone = .46 + .065*(1-y) + .03*x
+        # Small, irregular stone chips; limit each polygon to its own bounding box.
+        for _ in range(280):
+            cx, cy = rng.uniform(0,n,2)
+            radius = rng.uniform(2.0,9.0)
+            left, right = max(0,int(cx-radius-1)), min(n,int(cx+radius+2))
+            top, bottom = max(0,int(cy-radius-1)), min(n,int(cy+radius+2))
+            yy, xx = np.mgrid[top:bottom,left:right]
+            count = rng.integers(3,7)
+            angles = np.arange(count)*2*np.pi/count + rng.uniform(-.20,.20,count)
+            lengths = radius*rng.uniform(.62,1,count)
+            vx, vy = cx + lengths*np.cos(angles), cy + lengths*np.sin(angles)
+            inside = np.ones(xx.shape,dtype=bool)
+            for i in range(count):
+                j = (i+1) % count
+                inside &= (vx[j]-vx[i])*(yy-vy[i]) >= (vy[j]-vy[i])*(xx-vx[i])
+            tone[top:bottom,left:right] += inside*rng.choice([-.17, -.10, .14, .21])
+    elif style == "tile":
+        # Offset arches meet at the rim of each row, like glazed scallop tiles.
+        u, v = x*7, y*6
+        row = np.floor(v)
+        local_x = (u + .5*(row % 2)) % 1 - .5
+        arch = (v % 1) - (.92 - np.sqrt(np.maximum(.25-local_x**2,0)))
+        tone = (.49 + .055*(1-y) + .035*x + .075*np.sin(4*local_x + phase)
+                - .17*np.exp(-(arch/.026)**2) + .10*np.exp(-((arch-.048)/.036)**2))
+    else:
+        raise ValueError(f"Unknown wallpaper style: {style}")
 
     # A little fine grain suppresses banding on both JPEG thumbnails and RGB565 panels.
     tone = np.clip(tone + rng.normal(0, .004, x.shape), 0, 1)
