@@ -69,7 +69,9 @@ static esp_err_t apply_credentials(const credentials_t *value)
 
 static void post_retry(void *arg)
 {
-    esp_event_post(BOARD_RECONNECT_EVENT, 0, NULL, 0, 0);
+    if (has_credentials && !station_ip &&
+        esp_event_post(BOARD_RECONNECT_EVENT, 0, NULL, 0, 0) != ESP_OK)
+        esp_timer_start_once(retry_timer, 15000000);
 }
 
 static void schedule_retry(void)
@@ -81,6 +83,8 @@ static void schedule_retry(void)
 static void on_network_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == BOARD_RECONNECT_EVENT) {
+        if (station_ip)
+            return;
         if (has_credentials && xSemaphoreTake(station_lock, 0) == pdTRUE) {
             if (esp_wifi_connect() != ESP_OK)
                 schedule_retry();
