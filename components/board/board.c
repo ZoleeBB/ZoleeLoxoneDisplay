@@ -1,7 +1,10 @@
 #include "board.h"
+#include "board_touch.h"
+#include "board_sound.h"
 #include "bsp/esp-bsp.h"
 #include "driver/sdmmc_host.h"
 #include "esp_vfs_fat.h"
+#include "esp_log.h"
 
 esp_err_t board_display_start(void)
 {
@@ -14,6 +17,14 @@ esp_err_t board_display_start(void)
     display.lv_adapter_cfg.stack_in_psram = true;
     if (!bsp_display_start_with_config(&display))
         return ESP_FAIL;
+    esp_err_t feedback=board_sound_start();
+    if (feedback==ESP_OK) {
+        if (bsp_display_lock(-1)) {
+            feedback=board_touch_feedback(bsp_display_get_input_dev());
+            bsp_display_unlock();
+        } else feedback=ESP_FAIL;
+    }
+    if (feedback!=ESP_OK) ESP_LOGW("touch", "Az érintési hang nem indult el (%d).", feedback);
     return bsp_display_backlight_on();
 }
 

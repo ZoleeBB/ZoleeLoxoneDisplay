@@ -3,6 +3,7 @@
  * A mikrofon csak a sikeres SIP-válasz után nyílik meg, és minden kilépési ágon bezár. */
 #include "app_intercom_audio.h"
 #include "door_ringtone.h"
+#include "board_sound.h"
 #include "app_ringtone_wav.h"
 #include "app_intercom_audio_protocol.h"
 #include "app_intercom_task.h"
@@ -29,7 +30,7 @@
 #include <unistd.h>
 
 #define SIP_PORT 5060
-#define AUDIO_RATE 24000
+#define AUDIO_RATE BOARD_AUDIO_RATE
 #define AUDIO_CAPTURE_CHANNELS 1
 #define AUDIO_DECIMATION (AUDIO_RATE / 8000)
 #define AUDIO_DSP_RATE 8000
@@ -45,7 +46,7 @@ static app_intercom_audio_status_t s_status;
 static bool s_ringtone, s_call_pending;
 static unsigned s_pending_revision;
 static int64_t s_gate_stop_at;
-static esp_codec_dev_handle_t s_speaker, s_microphone;
+static esp_codec_dev_handle_t s_microphone;
 static void audio_worker(void *argument);
 
 /* Újraindulás után is megmaradó, titkot nem tartalmazó hangművelet-jelző.
@@ -625,43 +626,24 @@ static bool hardware_check(audio_hw_error_t error, const char *stage, int result
     return false;
 }
 
-/* A BSP hibás részleges inicializálás után nem nullázza a statikus csatornákat.
- * Egyszer próbáljuk: ismételt hívás nem használhat felszabadított BSP-handlet. */
-static bool s_i2s_attempted;
-static esp_err_t s_i2s_result;
-static char s_i2s_error[128];
-
-static esp_err_t prepare_i2s(void)
+static bool prepare_speaker(audio_hw_error_t error)
 {
-    if (s_i2s_attempted)
-        return s_i2s_result;
-    s_i2s_attempted = true;
-    /* A BSP alapértéke 22050 Hz mono. Közös órajelen, kezdettől 16 kHz
-     * Philips sztereó kell az ES8311 és a kétcsatornás ES7210 számára. */
-    /* BSP 3.0.1: a 4B mikrofonbemenete négy fizikai TDM-slotot használ.
-     * FL=slot0, RE=slot1, FR=slot2; a kaputelefon egyetlen FL csatornát kér. */
     audio_checkpoint(AUDIO_STAGE_I2S);
-    s_i2s_result = bsp_audio_init_voice_24k();
-    snprintf(s_i2s_error, sizeof(s_i2s_error),
-             "Hang I2S indítás (%d). DMA: %u B szabad, %u B legnagyobb blokk.%s",
-             s_i2s_result,
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+    int result = board_sound_prepare();
+    if (result == ESP_OK) return true;
+    snprintf(error, sizeof(audio_hw_error_t),
+             "Hang I2S / ES8311 indítás (%d). DMA: %u B szabad, %u B legnagyobb blokk.%s",
+             result, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
-             s_i2s_result == ESP_OK ? "" : " Újraindítás szükséges.");
-    if (s_i2s_result != ESP_OK)
-        ESP_LOGW(TAG, "%s", s_i2s_error);
-    return s_i2s_result;
+             result == ESP_ERR_INVALID_STATE ? " Újraindítás szükséges." : "");
+    ESP_LOGW(TAG,"%s",error);
+    return false;
 }
 
 static bool open_hardware(audio_call_t *call)
 {
-    /* Az I2S belső DMA-területe előbb készül el, mint a DSP és a hálózati hangpufferek. */
-    if (!hardware_check(call->hardware_error, "Hang I2C indítás", bsp_i2c_init()))
+    if (!prepare_speaker(call->hardware_error))
         return false;
-    if (prepare_i2s() != ESP_OK) {
-        snprintf(call->hardware_error, sizeof(call->hardware_error), "%s", s_i2s_error);
-        return false;
-    }
     /* A DSP és a mintapufferek PSRAM-ban élnek. A DMA saját belső puffereit
      * az I2S driver foglalja; a DSP nem fogyaszthatja el előlük a belső RAM-ot. */
     aec_config_t aec_config = {
@@ -691,15 +673,6 @@ static bool open_hardware(audio_call_t *call)
         !wanted(call->epoch, call->revision)) {
         return false;
     }
-    /* A gyártói duplex mintához hasonlóan mindkét kodek elkészül,
-     * mielőtt megnyitnánk a közös adatillesztést. */
-    if (!s_speaker) {
-        audio_checkpoint(AUDIO_STAGE_SPEAKER);
-        s_speaker = bsp_audio_codec_speaker_init();
-    }
-    if (!hardware_check(call->hardware_error, "ES8311 hangszóró inicializálás", s_speaker ? ESP_OK : ESP_FAIL)) {
-        return false;
-    }
     if (!s_microphone) {
         audio_checkpoint(AUDIO_STAGE_MICROPHONE);
         s_microphone = bsp_audio_codec_microphone_init();
@@ -708,14 +681,11 @@ static bool open_hardware(audio_call_t *call)
         return false;
     }
     esp_codec_dev_sample_info_t format = {.sample_rate = AUDIO_RATE, .channel = 2, .bits_per_sample = 16};
-    /* Sikertelen open után is bezárjuk az esetleg engedélyezett adatillesztést. */
     audio_checkpoint(AUDIO_STAGE_SPEAKER);
-    call->speaker_open = true;
-    if (!hardware_check(call->hardware_error, "Hangszóró megnyitás", esp_codec_dev_open(s_speaker, &format)) ||
-        !hardware_check(call->hardware_error, "Hangszóró hangerő", esp_codec_dev_set_out_vol(s_speaker, (int)call->volume)) ||
-        !wanted(call->epoch, call->revision)) {
+    call->speaker_open = hardware_check(call->hardware_error, "Hangszóró megnyitás",
+                                        board_sound_media_open(call->volume));
+    if (!call->speaker_open || !wanted(call->epoch, call->revision))
         return false;
-    }
     audio_checkpoint(AUDIO_STAGE_MICROPHONE);
     call->microphone_open = true;
     esp_codec_dev_sample_info_t microphone_format = format;
@@ -723,7 +693,6 @@ static bool open_hardware(audio_call_t *call)
     microphone_format.channel_mask = BSP_AUDIO_TDM_SLOT_MASK_FL;
     return hardware_check(call->hardware_error, "Mikrofon megnyitás", esp_codec_dev_open(s_microphone, &microphone_format)) &&
         hardware_check(call->hardware_error, "Mikrofon feloldás", esp_codec_dev_set_in_mute(s_microphone, call->microphone_gain == 0)) &&
-        hardware_check(call->hardware_error, "Hangszóró feloldás", esp_codec_dev_set_out_mute(s_speaker, call->volume == 0)) &&
         hardware_check(call->hardware_error, "Mikrofon erősítés", esp_codec_dev_set_in_gain(s_microphone, call->microphone_gain * 0.375f));
 }
 
@@ -806,7 +775,7 @@ static void media_session(audio_call_t *call)
         /* Előbb kapjon adatot a DAC: a mikrofon és az AEC nem késleltetheti
          * a már fogadott hangblokk átadását. Az I2S olvasás/írás ugyanazon az órán fut. */
         audio_checkpoint(AUDIO_STAGE_PLAYBACK);
-        if (esp_codec_dev_write(s_speaker, speaker, frame * 4) != ESP_CODEC_DEV_OK) {
+        if (board_sound_media_write(speaker, frame) != ESP_CODEC_DEV_OK) {
             publish(call->epoch, APP_INTERCOM_AUDIO_ERROR, "A kijelző hangkimenete nem érhető el.");
             break;
         }
@@ -831,7 +800,11 @@ static void media_session(audio_call_t *call)
         audio_checkpoint(AUDIO_STAGE_PROCESS);
         aec_process(call->aec, microphone, reference, clean);
         for (unsigned i = 0; i < samples; i++) {
-            reference[i] = remote[i];
+            /* Include the quiet local click in the reference sent to AEC. */
+            int sum = 0;
+            for (unsigned n = 0; n < AUDIO_DECIMATION; ++n)
+                sum += speaker[(i * AUDIO_DECIMATION + n) * 2];
+            reference[i] = (int16_t)(sum / AUDIO_DECIMATION);
         }
         if (!wanted(call->epoch, call->revision)) {
             break;
@@ -854,12 +827,6 @@ static void media_session(audio_call_t *call)
     }
 }
 
-static void close_speaker(void)
-{
-    esp_codec_dev_set_out_mute(s_speaker, true);
-    esp_codec_dev_close(s_speaker);
-}
-
 static void close_call(audio_call_t *call)
 {
     audio_checkpoint(AUDIO_STAGE_CLOSE);
@@ -869,7 +836,7 @@ static void close_call(audio_call_t *call)
         esp_codec_dev_close(s_microphone);
     }
     if (call->speaker_open) {
-        close_speaker();
+        board_sound_media_close();
     }
     if (call->aec) {
         aec_destroy(call->aec);
@@ -962,18 +929,9 @@ static void ringtone_play(unsigned epoch, unsigned revision, const app_intercom_
         free(data);
         return;
     }
-    if (!hardware_check(error, "Hang I2C indítás", bsp_i2c_init()) || prepare_i2s() != ESP_OK) {
-        publish(epoch, APP_INTERCOM_AUDIO_ERROR, error[0] ? error : s_i2s_error);
-        free(data);
-        return;
-    }
-    if (!s_speaker) s_speaker = bsp_audio_codec_speaker_init();
-    esp_codec_dev_sample_info_t format = {.sample_rate = AUDIO_RATE, .channel = 2, .bits_per_sample = 16};
-    bool speaker_open = s_speaker != NULL;
-    if (!hardware_check(error, "Hangszóró inicializálás", s_speaker ? ESP_OK : ESP_FAIL) ||
-        !hardware_check(error, "Hangszóró megnyitás", esp_codec_dev_open(s_speaker, &format)) ||
-        !hardware_check(error, "Hangszóró hangerő", esp_codec_dev_set_out_vol(s_speaker, snapshot->config.speaker_volume)) ||
-        !hardware_check(error, "Hangszóró feloldás", esp_codec_dev_set_out_mute(s_speaker, snapshot->config.speaker_volume == 0))) {
+    bool speaker_open = prepare_speaker(error) && hardware_check(error, "Hangszóró megnyitás",
+                                       board_sound_media_open(snapshot->config.speaker_volume));
+    if (!speaker_open) {
         publish(epoch, APP_INTERCOM_AUDIO_ERROR, error);
         goto done;
     }
@@ -990,7 +948,7 @@ static void ringtone_play(unsigned epoch, unsigned revision, const app_intercom_
                 int16_t sample = (int16_t)((unsigned)p[0] | ((unsigned)p[1] << 8));
                 output[i * 2] = output[i * 2 + 1] = sample;
             }
-            if (esp_codec_dev_write(s_speaker, output, count * 4) != ESP_CODEC_DEV_OK) {
+            if (board_sound_media_write(output, count) != ESP_CODEC_DEV_OK) {
                 publish(epoch, APP_INTERCOM_AUDIO_ERROR, "A csengőhang lejátszása sikertelen.");
                 goto done;
             }
@@ -998,7 +956,7 @@ static void ringtone_play(unsigned epoch, unsigned revision, const app_intercom_
         }
     } while (snapshot->config.ringtone_repeat && ringtone_wanted(epoch, revision));
 done:
-    if (speaker_open) close_speaker();
+    if (speaker_open) board_sound_media_close();
     free(data);
 }
 
@@ -1045,7 +1003,7 @@ static void audio_worker(void *argument)
 esp_err_t app_intercom_audio_start(void)
 {
     report_audio_reset();
-    /* Az I2S és a kodek csak csengetéskor vagy helyi hívásindításkor foglal memóriát. */
+    /* A mikrofon és a DSP csak híváskor indul; a kijelző közös hangszóróval ad érintési visszajelzést. */
     audio_checkpoint(AUDIO_STAGE_NONE);
     portENTER_CRITICAL(&s_lock);
     s_started = true;
