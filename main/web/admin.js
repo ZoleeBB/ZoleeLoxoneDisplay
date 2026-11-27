@@ -284,9 +284,9 @@ function touchEligible(type,row){
   switch(type){
     case 'pulse':return row.touch_button===true;
     case 'switch':return row.touch_switch===true;
-    case 'lighting':return row.type==='LightControllerV2' && row.lighting_blocked===false;
-    case 'shading':return ['Jalousie','CentralJalousie'].includes(row.type) && row.shading_blocked===false;
-    case 'audio':return row.controls_type==='audio' && row.controls_blocked===false;
+    case 'lighting':return row.touch_target===true && row.type==='LightControllerV2' && row.lighting_blocked===false;
+    case 'shading':return row.touch_target===true && ['Jalousie','CentralJalousie'].includes(row.type) && row.shading_blocked===false;
+    case 'audio':return row.touch_target===true && row.controls_type==='audio' && row.controls_blocked===false;
     case 'input':return row.touch_input===true;
     default:return false;
   }

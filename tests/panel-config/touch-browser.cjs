@@ -13,14 +13,15 @@ const savedMissing = uuid(91);
 const empty = () => ({type:'', uuid:'', action:'', sceneId:0});
 const row = (id,type,name,eligibility) => ({uuid:id,control_uuid:id,type,name,room:'Nappali',secured:false,...eligibility});
 const rows = [
-  row(light,'LightControllerV2','Mennyezeti fény',{lighting_blocked:false}),
-  row(otherLight,'LightControllerV2','Olvasósarok',{lighting_blocked:false}),
-  row(player,'AudioZoneV2','Nappali hangszóró',{controls_type:'audio',controls_blocked:false}),
-  row(blind,'Jalousie','Teraszárnyékoló',{shading_blocked:false}),
-  row(centralBlind,'CentralJalousie','Központi árnyékolás',{shading_blocked:false}),
+  row(light,'LightControllerV2','Mennyezeti fény',{touch_target:true,lighting_blocked:false}),
+  row(otherLight,'LightControllerV2','Olvasósarok',{touch_target:true,lighting_blocked:false}),
+  row(player,'AudioZoneV2','Nappali hangszóró',{touch_target:true,controls_type:'audio',controls_blocked:false}),
+  row(blind,'Jalousie','Teraszárnyékoló',{touch_target:true,shading_blocked:false}),
+  row(centralBlind,'CentralJalousie','Központi árnyékolás',{touch_target:true,shading_blocked:false}),
   row(latch,'Switch','Állólámpa',{touch_switch:true}),row(pulse,'Pushbutton','Csengő',{touch_button:true}),
   row(virtual,'Pushbutton','Touch virtuális bemenet',{touch_button:true,touch_input:true}),
-  row(secured,'LightControllerV2','Zárolt vezérlő',{lighting_blocked:false,secured:true})
+  row(uuid(80),'LightControllerV2','Hiányos állapotlista',{lighting_blocked:false}),
+  row(secured,'LightControllerV2','Zárolt vezérlő',{touch_target:true,lighting_blocked:false,secured:true})
 ];
 const profileWithoutTouch = {
   schema:1,revision:1,adminUser:'',loxone:{host:'mini',user:'panel',port:80,tls:false,ca_pem:''},
