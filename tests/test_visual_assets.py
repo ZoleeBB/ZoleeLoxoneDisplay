@@ -1,4 +1,6 @@
 """Check the exact SD image formats consumed by the panel and web editor (stdlib only)."""
+from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -41,13 +43,22 @@ class PanelImages(unittest.TestCase):
 
     def test_wallpapers(self):
         rows = self.check_catalog("backgrounds", "jpg")
-        self.assertGreaterEqual(len(rows), 30)
+        categories = Counter(r["category"] for r in rows)
+        self.assertEqual(set(categories), {"landscape", "pattern"})
+        self.assertGreaterEqual(categories["landscape"], 32)
+        self.assertGreaterEqual(categories["pattern"], 32)
+        self.assertEqual(len(set(r["name"] for r in rows)), len(rows))
+        digests = set()
         for row in rows:
             name = row["id"]
             with self.subTest(name=name):
+                original = SD / "backgrounds" / (name + ".jpg")
+                digest = hashlib.sha256(original.read_bytes()).digest()
+                self.assertNotIn(digest, digests, "Duplicate full-size artwork")
+                digests.add(digest)
                 thumb = row["thumbnail"]
                 self.assertEqual(thumb, f"thumbs/{name}.jpg")
-                for path, size in [(SD / "backgrounds" / f"{name}.jpg",720), (SD / thumb,120)]:
+                for path, size in [(original,720), (SD / thumb,120)]:
                     self.assertEqual(jpeg_header(path), (0xc0, 8, size, size, 3))
         self.assertEqual({r["thumbnail"] for r in rows}, {p.relative_to(SD).as_posix() for p in (SD / "thumbs").glob("*.jpg")})
 
