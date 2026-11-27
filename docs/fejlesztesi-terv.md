@@ -16,7 +16,7 @@ A kiinduló állapot a [ZoleeEnergyFlowDisplay 6786e84 kiadási fája](https://g
 
 ## Készülékes ellenőrzés
 
-Az elfogadási próbákat mindkét cikkszámon rögzíteni kell az adott panel szilíciumrevíziójával és firmware-azonosítójával együtt. A memória összevetési pontjai az üres lap, a világítási részletek, az energiakép, a hívás megnyitása és tíz bontás utáni nyugalmi állapot. Külön mérendő a szabad belső DMA-memória és a legnagyobb összefüggő blokk. Az automatizált fordítás és a készülékes próba eredményét külön vezetjük.
+Az elfogadási próbákat mindkét cikkszámon rögzíteni kell az adott panel szilíciumrevíziójával és firmware-azonosítójával együtt. A memória összevetési pontjai az üres lap, a világítási részletek, az energiakép, a hívás megnyitása és tíz bontás utáni nyugalmi állapot. Külön mérendő a szabad belső DMA-memória és a legnagyobb összefüggő blokk. A kaputelefonnál ellenőrizendő a választott hang ismétlése, a csengetésből beszélgetésbe váltás és a készüléken hallható hangerő. A képernyőkímélőnél a nappali szürke és az éjszakai vörös óra olvashatóságát mindkét modellen érdemes megnézni a beállított éjszakai fényerőn.
 
 ## Az INIT ág ellenőrzései
 
@@ -26,6 +26,7 @@ Az elfogadási próbákat mindkét cikkszámon rögzíteni kell az adott panel s
 | Valódi kezelőfelület szimulált adatokkal | LVGL 9.5.0 és szimulált érintőeszköz ellenőrzi a Wi-Fi-billentyűzetet, a füleket, a termosztátot, az aktív hangulatot, az RGBW-kimenetet és a félkövér óráról érintéssel történő visszalépést. A palettateszt világos, sötét és telített színeken ellenőrzi a mezők árnyalatát és a feliratok kontrasztját. |
 | Webes szerkesztő | A kiszolgált HTML/CSS/JS felületet asztali és 390 képpont széles mobil Chromiumban, helyi API-tesztadatokkal próbáltuk ki. A két kategóriába rendezett háttérképek és az ikonok a tényleges csomagból töltődtek be. |
 | Kártya és frissítés | A tesztek lefedik a hiányzó fájlt, a sérült SHA-t, a megszakított másolást, a folytatást, a téves célpanel elutasítását és az SD eltávolítását a firmware írása közben. |
+| Csengőhangok | Az Energy Flow Display v4.0.0 kiadásának 18 hangos csomagjával ellenőriztük az online és a helyi telepítési útvonalat. Az audiofeladat natív próbája lefedi a mentett WAV kiválasztását, az ismétlést, a némítást, a hívás átvételét és a memória felszabadítását. |
 | Állapot és profil | Automatizált próba ellenőrzi a titkosított mentést és helyreállítást, a Loxone-értékek és lapok hozzárendelését, a napi integrálást és a SIP/RTP hangprotokollt. |
 
 A fizikai beüzemelés nyitott próbái a panelre írás, a valós Miniserverrel végzett állapot- és parancspróba, a hangszóró és mikrofon, az Ethernetes panel, valamint a készüléken mért fényerő és szabad DMA-memória. Az előnézetek és az ismételhető szimulátorteszt a kezelési útmutatóból nyithatók meg. [Kijelzőképek és tesztkörnyezet](screens.md)

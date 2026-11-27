@@ -32,11 +32,11 @@ A három előnézetet a firmware saját LVGL-felülete rajzolta mintaadatokkal. 
 | Helyiségklíma és árnyékolás | Nagy mért hőmérséklet, célhőfok és félfokos állítás. Az árnyékolónál fel, stop, le és az adott blokk által támogatott pozícióállítás. |
 | Több eszköz egy lapon | A sorokból megnyitható az adott eszköz kezelőfelülete. Kapcsoló, nyomógomb, dimmer, érték, csúszka, időzített kapcsoló, ajtó–ablak összesítő, kapu, motoros ablak és modern Audioserver is hozzárendelhető. |
 | Energiaáramlás | A négyzetes 4B Slave nappali és éjszakai ábrája a hálózat, az akkumulátor, a napelem és a ház közötti áramlást mutatja. A jelek az adott energiafülhöz rendelhetők. |
-| Kaputelefon | Csengetéskor a panel megmutatja az élőképet és a beszélgetés gombját. Beállított kimenet esetén a kapu is nyitható. A kaputelefon bekapcsolása és a média használata külön lépés, a nagy pufferek híváskor foglalódnak le. |
+| Kaputelefon | Csengetéskor a panel megmutatja az élőképet és a beszélgetés gombját. Beállított kimenet esetén a kapu is nyitható. A webes felületen választható ki a csengetéskor lejátszott hang. A panel letölti az Energy Flow Display hangcsomagját, vagy helyi ZIP-ből telepíti. A hang mentés előtt meghallgatható. A nagy médiapufferek a hozzájuk tartozó funkció használatakor foglalódnak le. |
 
 **Megjelenés.** Nyolc fület állíthatsz össze, vezérlőfülenként legfeljebb tizenkét elemmel. A fülekhez 84 monokróm ikonból választhatsz. A szobaháttérhez 32 tájkép és 32 egyszerű mintázat áll rendelkezésre. Egyszínű lapnál a mezők a kiválasztott szín sötétebb árnyalatát kapják. Nagyon sötét háttéren a panel világosabb árnyalatot használ, hogy a gombok és a sorok körvonala jól látszódjon. [Háttérképek és ikonok előnézete](docs/keptar.md)
 
-**Éjszakai használat.** Az éjszakai fényerőt Miniserver-jel vagy helyi időzítés kapcsolja. Ettől függetlenül beállítható az inaktivitási idő. Ha letelik, a halvány fülsor alatt nagy, félkövér óra jelenik meg. Legalul az egyszínű „Zolee LOXONE Display” felirat látható a Loxone emblémájával. Az első érintés felébreszti a panelt. Az időkorlát üresen hagyva vagy nullára állítva kikapcsolja az automatikus képernyőkímélőt.
+**Éjszakai használat.** Az éjszakai fényerőt Miniserver-jel vagy helyi időzítés kapcsolja. Ettől függetlenül beállítható az inaktivitási idő. Ha letelik, a halvány fülsor alatt nagy, félkövér óra jelenik meg. A számjegyek nappal szürkék, aktív éjszakai módban tompa vörösek. Legalul az egyszínű „Zolee LOXONE Display” felirat látható a Loxone emblémájával. Az első érintés felébreszti a panelt. Az időkorlát üresen hagyva vagy nullára állítva kikapcsolja az automatikus képernyőkímélőt.
 
 ![A webes háttérválasztó mintabeállítással](docs/images/admin-background-picker.jpg)
 
