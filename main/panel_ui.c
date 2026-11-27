@@ -1,4 +1,5 @@
 #include "panel_ui.h"
+#include "app_loxone_wordmark.h"
 #include "panel_ui_style.h"
 #include "panel_config.h"
 #include "panel_controls.h"
@@ -159,6 +160,31 @@ static void wake_event(lv_event_t *event)
     wake();
 }
 
+LV_FONT_DECLARE(app_font_standby_132);
+static const uint32_t standby_ink = 0x8B8C8E;
+
+static void standby_brand(lv_obj_t *layer)
+{
+    lv_obj_t *line = lv_obj_create(layer);
+    lv_obj_remove_style_all(line);
+    lv_obj_remove_flag(line, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(line, LV_SIZE_CONTENT, 35);
+    lv_obj_set_flex_flow(line, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(line, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(line, 7, 0);
+    lv_obj_align(line, LV_ALIGN_BOTTOM_MID, 0, -26);
+
+    panel_label(line, "Zolee", 0, 0, &app_font_24, standby_ink);
+    lv_obj_t *mark = lv_image_create(line);
+    lv_image_set_src(mark, &loxone_wordmark);
+    /* A 400 × 88-as szójel nagybetűi a kísérőszöveg 18 pixeles nagybetűivel egy magasságúak. */
+    lv_obj_set_size(mark, 82, 18);
+    lv_image_set_inner_align(mark, LV_IMAGE_ALIGN_STRETCH);
+    lv_obj_set_style_image_recolor(mark, lv_color_hex(standby_ink), 0);
+    lv_obj_set_style_image_recolor_opa(mark, LV_OPA_COVER, 0);
+    panel_label(line, "Display", 0, 0, &app_font_24, standby_ink);
+}
+
 static void rest(void)
 {
     saver = true;
@@ -173,8 +199,9 @@ static void rest(void)
     lv_obj_set_style_bg_opa(saver_layer, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(saver_layer, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(saver_layer, wake_event, LV_EVENT_PRESSED, NULL);
-    clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_numbers_132, 0x8B8C8E);
+    clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_standby_132, standby_ink);
     lv_obj_center(clock_label);
+    standby_brand(saver_layer);
     illuminate(number(display, "nightBrightness", 10));
 }
 

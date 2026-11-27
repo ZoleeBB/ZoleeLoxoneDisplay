@@ -1,4 +1,5 @@
 #include "panel_ui.h"
+#include "app_loxone_wordmark.h"
 #include "fixture.h"
 #include "lvgl.h"
 #include <assert.h>
@@ -58,6 +59,41 @@ static bool has_label(lv_obj_t *parent, const char *text)
             return true;
     }
     return false;
+}
+
+static void assert_standby(void)
+{
+    lv_obj_t *layer = lv_obj_get_child(lv_screen_active(), -1);
+    lv_obj_t *footer = lv_obj_get_child(layer, -1);
+    assert(has_label(layer, "07:13"));
+    assert(has_label(footer, "Zolee") && has_label(footer, "Display"));
+    assert(lv_obj_get_child_count(footer) == 3);
+    lv_obj_t *mark = lv_obj_get_child(footer, 1);
+    assert(lv_obj_check_type(mark, &lv_image_class) && lv_image_get_src(mark) == &loxone_wordmark);
+    lv_area_t area;
+    lv_obj_get_coords(footer, &area);
+    assert(abs(area.x1 + area.x2 + 1 - SIDE) <= 2 && area.y1 >= 620 && area.y2 < SIDE - 10);
+
+    /* A vékony hőmérőfont ugyanilyen méretben csak mintegy 5000 festett képpontot ad.
+     * A szimulátor rögzített 07:13 képe félkövér számjegyekkel tízezer fölött van. */
+    unsigned clock_pixels = 0;
+    for (int y = 260; y < 460; y++) {
+        for (int x = 0; x < SIDE; x++) {
+            if ((framebuffer[y * SIDE + x] & 0xff) > 50) clock_pixels++;
+        }
+    }
+    assert(clock_pixels > 8500 && clock_pixels < 14000);
+
+    /* A valódi PNG az átfestés után a két felirattal azonos tintaárnyalatot ad. */
+    lv_color_t ink = lv_obj_get_style_text_color(lv_obj_get_child(footer, 0), 0);
+    assert(lv_color_eq(ink, lv_obj_get_style_text_color(lv_obj_get_child(footer, 2), 0)));
+    uint32_t color = lv_color_to_u32(ink) & 0xffffff;
+    lv_obj_get_coords(mark, &area);
+    unsigned solid = 0;
+    for (int y = area.y1; y <= area.y2; y++)
+        for (int x = area.x1; x <= area.x2; x++)
+            if ((framebuffer[y * SIDE + x] & 0xffffff) == color) solid++;
+    assert(solid > 150);
 }
 
 static void snapshot(const char *name)
@@ -153,9 +189,14 @@ int main(int argc, char **argv)
     snapshot("energy-daily");
     step(9000);
     assert(fixture_brightness == 10 && fixture_page == -1);
+    assert_standby();
     snapshot("standby");
     unsigned before = fixture_calls;
     tap(270, 42);
+    assert(fixture_brightness == 80 && fixture_page == 3 && fixture_calls == before);
+    step(9000);
+    assert(fixture_page == -1);
+    tap(SIDE / 2, 677);
     assert(fixture_brightness == 80 && fixture_page == 3 && fixture_calls == before);
     puts("Rendben: Wi-Fi varázsló, webes átadás, lapváltás, IRC és jelenetparancs, kimenetek, energia, "
          "képernyőkímélő és ébresztés.");
