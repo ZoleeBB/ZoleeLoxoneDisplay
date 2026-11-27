@@ -1,4 +1,5 @@
 #include "panel_ui.h"
+#include "panel_touch_ui.h"
 #include "app_loxone_wordmark.h"
 #include "panel_ui_style.h"
 #include "panel_config.h"
@@ -49,6 +50,7 @@ static void illuminate(int value)
 
 static void delete_view(void)
 {
+    panel_touch_close();
     panel_controls_close();
     if (saver_layer)
         lv_obj_delete(saver_layer);
@@ -142,6 +144,7 @@ static void wake(void)
 {
     if (!saver)
         return;
+    panel_touch_close();
     lv_obj_delete(saver_layer);
     saver_layer = clock_label = NULL;
     saver = false;
@@ -165,7 +168,7 @@ static const uint32_t standby_ink = 0x8B8C8E;
 static const uint32_t standby_night_ink = 0xA04E4E;
 static bool night_confirmed;
 
-static void standby_brand(lv_obj_t *layer)
+static void standby_brand(lv_obj_t *layer, bool touch_enabled)
 {
     lv_obj_t *line = lv_obj_create(layer);
     lv_obj_remove_style_all(line);
@@ -174,10 +177,12 @@ static void standby_brand(lv_obj_t *layer)
     lv_obj_set_flex_flow(line, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(line, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(line, 7, 0);
-    lv_obj_align(line, LV_ALIGN_BOTTOM_MID, 0, -26);
+    /* A hatszög keskenyedő alján a szójel minden betűje a két vonal közé fér. */
+    lv_obj_align(line, LV_ALIGN_BOTTOM_MID, 0, touch_enabled ? -58 : -26);
 
     panel_label(line, "Zolee", 0, 0, &app_font_24, standby_ink);
     lv_obj_t *mark = lv_image_create(line);
+    lv_obj_remove_flag(mark, LV_OBJ_FLAG_CLICKABLE);
     lv_image_set_src(mark, &loxone_wordmark);
     /* A 400 × 88-as szójel nagybetűi a kísérőszöveg 18 pixeles nagybetűivel egy magasságúak. */
     lv_obj_set_size(mark, 82, 18);
@@ -200,11 +205,16 @@ static void rest(void)
     saver_layer = panel_box(screen, 0, 0, 720, 720, 0, 0);
     lv_obj_set_style_bg_opa(saver_layer, LV_OPA_TRANSP, 0);
     lv_obj_add_flag(saver_layer, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(saver_layer, wake_event, LV_EVENT_PRESSED, NULL);
+    const cJSON *touch = get(profile, "touch");
+    bool touch_enabled = cJSON_IsTrue(get(touch, "enabled"));
+    if (touch_enabled)
+        panel_touch_open(saver_layer, generation, (unsigned)number(touch, "tapWindowMs", 400), wake);
+    else
+        lv_obj_add_event_cb(saver_layer, wake_event, LV_EVENT_PRESSED, NULL);
     clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_standby_132,
                               night_confirmed ? standby_night_ink : standby_ink);
     lv_obj_center(clock_label);
-    standby_brand(saver_layer);
+    standby_brand(saver_layer, touch_enabled);
     illuminate(number(display, "nightBrightness", 10));
 }
 
@@ -324,6 +334,10 @@ static void tick(lv_timer_t *timer)
         last_service = now;
         service();
     }
+    if (saver && panel_intercom_active())
+        wake();
+    else if (saver)
+        panel_touch_tick();
     if (loaded && !saver) {
         if (energy_page)
             panel_energy_update(active_tab, night, clock_text);

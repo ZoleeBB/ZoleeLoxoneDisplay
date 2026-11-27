@@ -1,0 +1,188 @@
+#include "panel_touch_ui.h"
+#include "panel_config.h"
+#include "panel_intercom_ui.h"
+#include "panel_ui_style.h"
+#include "zld_loxone.h"
+#include <stdlib.h>
+
+enum {
+    SIDE = 720, MID = SIDE / 2, WING_TIP = 46, WING_END = 274,
+    UNLOCK_BAND = 52, UNLOCK_RISE = 90, UNLOCK_DRIFT = 60,
+    TAP_DRIFT = 24, TAP_HOLD_MS = 600
+};
+enum { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER };
+typedef enum { IDLE, KEY_DOWN, SWIPE, CANCELED } contact_t;
+
+static struct {
+    unsigned generation, window_ms, zone, taps;
+    uint32_t session, down_at, last_release;
+    lv_point_t origin;
+    lv_indev_t *finger;
+    contact_t contact;
+    void (*unlock)(void);
+} touch;
+
+static unsigned zone_at(lv_point_t p)
+{
+    int left = WING_TIP + (WING_END - WING_TIP) * abs(p.y - MID) / MID;
+    if (p.x < left) return p.y < MID ? TOP_LEFT : BOTTOM_LEFT;
+    if (p.x >= SIDE - left) return p.y < MID ? TOP_RIGHT : BOTTOM_RIGHT;
+    return CENTER;
+}
+
+static void line(lv_obj_t *layer, const lv_point_precise_t *path, unsigned count)
+{
+    lv_obj_t *stroke = lv_line_create(layer);
+    lv_line_set_points(stroke, path, count);
+    lv_obj_set_style_line_color(stroke, lv_color_hex(0x191B1D), 0);
+    lv_obj_set_style_line_width(stroke, 2, 0);
+    lv_obj_remove_flag(stroke, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void draw_boundaries(lv_obj_t *layer)
+{
+    static const lv_point_precise_t left[] = {{WING_END, 0}, {WING_TIP, MID}, {WING_END, SIDE}};
+    static const lv_point_precise_t right[] = {{SIDE-WING_END, 0}, {SIDE-WING_TIP, MID}, {SIDE-WING_END, SIDE}};
+    static const lv_point_precise_t left_split[] = {{0, MID}, {WING_TIP, MID}};
+    static const lv_point_precise_t right_split[] = {{SIDE-WING_TIP, MID}, {SIDE, MID}};
+    line(layer, left, 3);
+    line(layer, right, 3);
+    line(layer, left_split, 2);
+    line(layer, right_split, 2);
+    panel_box(layer, MID - 52, 704, 104, 5, 0x515356, 3);
+}
+
+static bool current_view(void)
+{
+    return touch.generation == panel_config_generation() && !panel_intercom_active();
+}
+
+static void submit(unsigned zone, unsigned taps)
+{
+    if (touch.session && current_view() && zld_touch_session(touch.generation) == touch.session)
+        zld_touch_press(touch.generation, touch.session, zone, taps);
+}
+
+static void finish_center(void)
+{
+    if (touch.taps)
+        submit(CENTER, touch.taps);
+    touch.taps = 0;
+}
+
+static void begin(lv_point_t p, lv_indev_t *finger, uint32_t now)
+{
+    touch.finger = finger;
+    touch.origin = p;
+    touch.down_at = now;
+    /* Az alsó sávban kezdett érintés kizárólag feloldásra szolgál, kapcsolat nélkül is. */
+    if (p.y >= SIDE - UNLOCK_BAND) {
+        touch.taps = 0;
+        touch.contact = SWIPE;
+        return;
+    }
+
+    uint32_t session = current_view() ? zld_touch_session(touch.generation) : 0;
+    if (session != touch.session)
+        touch.taps = 0;
+    touch.session = session;
+    touch.zone = zone_at(p);
+    if (touch.taps && now - touch.last_release > touch.window_ms)
+        finish_center();
+    touch.contact = session ? KEY_DOWN : CANCELED;
+}
+
+static void motion(lv_point_t p)
+{
+    int dx = p.x - touch.origin.x, dy = p.y - touch.origin.y;
+    if (p.x < 0 || p.y < 0 || p.x >= SIDE || p.y >= SIDE)
+        touch.contact = CANCELED;
+    if (touch.contact == SWIPE && (abs(dx) > UNLOCK_DRIFT || dy > TAP_DRIFT))
+        touch.contact = CANCELED;
+    if (touch.contact == KEY_DOWN && (abs(dx) > TAP_DRIFT || abs(dy) > TAP_DRIFT ||
+        dx * dx + dy * dy > TAP_DRIFT * TAP_DRIFT || p.y >= SIDE - UNLOCK_BAND || zone_at(p) != touch.zone))
+        touch.contact = CANCELED;
+    if (touch.contact == CANCELED)
+        touch.taps = 0;
+}
+
+static void end(lv_point_t p, uint32_t now)
+{
+    contact_t contact = touch.contact;
+    touch.finger = NULL;
+    touch.contact = IDLE;
+    if (contact == SWIPE && touch.origin.y - p.y >= UNLOCK_RISE && current_view()) {
+        touch.unlock();
+        return;
+    }
+    if (contact != KEY_DOWN || now - touch.down_at > TAP_HOLD_MS || !current_view() ||
+        touch.session != zld_touch_session(touch.generation)) {
+        touch.taps = 0;
+        return;
+    }
+    if (touch.zone != CENTER) {
+        finish_center();
+        submit(touch.zone, 1);
+        return;
+    }
+    touch.last_release = now;
+    if (++touch.taps == 3)
+        finish_center();
+}
+
+static void input(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_indev_t *finger = lv_indev_active();
+    if (!finger || lv_indev_get_type(finger) != LV_INDEV_TYPE_POINTER)
+        return;
+    lv_point_t point;
+    lv_indev_get_point(finger, &point);
+    uint32_t now = lv_tick_get();
+    if (code == LV_EVENT_PRESSED) {
+        begin(point, finger, now);
+    } else if (touch.finger == finger) {
+        if (code == LV_EVENT_PRESS_LOST) {
+            touch.taps = 0;
+            touch.contact = IDLE;
+            touch.finger = NULL;
+        } else {
+            motion(point);
+            if (code == LV_EVENT_RELEASED)
+                end(point, now);
+        }
+    }
+}
+
+void panel_touch_open(lv_obj_t *layer, unsigned generation, unsigned tap_window_ms, void (*unlock)(void))
+{
+    touch.generation = generation;
+    touch.window_ms = tap_window_ms;
+    touch.unlock = unlock;
+    draw_boundaries(layer);
+    lv_obj_add_flag(layer, LV_OBJ_FLAG_PRESS_LOCK);
+    lv_obj_add_event_cb(layer, input, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(layer, input, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(layer, input, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(layer, input, LV_EVENT_PRESS_LOST, NULL);
+}
+
+void panel_touch_close(void)
+{
+    if (!touch.unlock) return;
+    touch.unlock = NULL;
+    zld_touch_cancel();
+    if (touch.finger)
+        lv_indev_wait_release(touch.finger);
+    touch.finger = NULL;
+    touch.contact = IDLE;
+    touch.taps = 0;
+    touch.session = 0;
+}
+
+void panel_touch_tick(void)
+{
+    /* A második érintés még az időablakban kezdődhetett, de később érhet véget. */
+    if (touch.taps && touch.contact == IDLE && lv_tick_elaps(touch.last_release) > touch.window_ms)
+        finish_center();
+}
