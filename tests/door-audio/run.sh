@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+binary=$(mktemp)
+trap 'rm -f "$binary"' EXIT
+"${CC:-cc}" -std=gnu11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all \
+    -Itests/door-audio/stubs -Itests/daily/stubs -Isimulator/compat -I"${CJSON_INCLUDE:-/usr/include/cjson}" \
+    -Icomponents/loxone/include -Icomponents/door_media -Icomponents/door_media/include -Icomponents/update/include \
+    tests/door-audio/worker.c components/door_media/{app_intercom_audio,app_intercom_audio_protocol}.c components/update/tones/app_ringtone_wav.c \
+    -Wl,--wrap=calloc,--wrap=free -pthread -o "$binary"
+"$binary"

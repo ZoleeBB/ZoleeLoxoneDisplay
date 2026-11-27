@@ -35,6 +35,18 @@ int main(void)
     assert(!strcmp(model->connection.password,"integration-secret"));
     assert(model->home.intercom.enabled && !strcmp(model->home.intercom.video_password,"video-secret"));
     assert(!strcmp(model->home.intercom.gate.name, "Kapunyitás"));
+    cJSON *door = cJSON_GetObjectItemCaseSensitive(document, "intercom");
+    assert(!model->home.intercom.ringtone[0] && !model->home.intercom.ringtone_repeat);
+    assert(cJSON_AddStringToObject(door, "ringtone", "selected-doorbell.wav"));
+    assert(cJSON_AddNumberToObject(door, "speakerVolume", 68));
+    assert(cJSON_AddTrueToObject(door, "ringtoneRepeat"));
+    assert(panel_profile_read(model, document, "integration-secret", "video-secret"));
+    assert(!strcmp(model->home.intercom.ringtone, "selected-doorbell.wav"));
+    assert(model->home.intercom.speaker_volume == 68 && model->home.intercom.ringtone_repeat);
+    assert(cJSON_ReplaceItemInObjectCaseSensitive(door, "ringtone", cJSON_CreateString("")));
+    assert(cJSON_ReplaceItemInObjectCaseSensitive(door, "ringtoneRepeat", cJSON_CreateFalse()));
+    assert(panel_profile_read(model, document, "integration-secret", "video-secret"));
+    assert(!model->home.intercom.ringtone[0] && !model->home.intercom.ringtone_repeat);
     assert(model->home.page_count == 3 && model->home.card_count == 1);
     assert(model->home.pages[1].first_card==0 && model->home.cards[0].type==LX_HOME_CARD_IRC);
     uint8_t delta[72];

@@ -165,7 +165,7 @@ void app_intercom_audio_gate_opened(unsigned revision)
     portEXIT_CRITICAL(&s_lock);
 }
 
-static esp_err_t audio_request(bool enabled, unsigned revision)
+static esp_err_t audio_request(bool enabled, unsigned revision, bool ringtone)
 {
     reap_audio();
     app_intercom_snapshot_t current;
@@ -174,7 +174,21 @@ static esp_err_t audio_request(bool enabled, unsigned revision)
         return ESP_ERR_INVALID_STATE;
     }
     portENTER_CRITICAL(&s_lock);
+    if (!enabled && s_pending_revision == revision) s_call_pending = false;
     if (!enabled && s_revision != revision) {
+        portEXIT_CRITICAL(&s_lock);
+        return ESP_OK;
+    }
+    /* A helyi hívás elsőbbséget élvez a fájl olvasásától a hangszóró
+     * bezárásáig. Az indítás és a worker típusa ugyanabban a zárban dől el. */
+    if (enabled && !ringtone && s_running && s_ringtone) {
+        s_call_pending = true;
+        s_pending_revision = revision;
+        s_silenced = true;
+        s_silenced_revision = revision;
+        s_requested = false;
+        ++s_epoch;
+        s_status.state = APP_INTERCOM_AUDIO_STOPPING;
         portEXIT_CRITICAL(&s_lock);
         return ESP_OK;
     }
@@ -183,24 +197,25 @@ static esp_err_t audio_request(bool enabled, unsigned revision)
         return ESP_ERR_INVALID_STATE;
     }
     if (enabled || s_requested || s_status.state == APP_INTERCOM_AUDIO_ERROR) {
-        s_epoch++;
+        ++s_epoch;
         s_revision = revision;
         s_requested = enabled;
         s_gate_stop_at = 0;
         if (enabled) {
             s_running = true;
+            s_ringtone = ringtone;
+            if (!ringtone) {
+                s_silenced = true;
+                s_silenced_revision = revision;
+            }
         }
         s_status = (app_intercom_audio_status_t){
-            .state = enabled ? APP_INTERCOM_AUDIO_CONNECTING :
+            .state = enabled ? (ringtone ? APP_INTERCOM_AUDIO_RINGING : APP_INTERCOM_AUDIO_CONNECTING) :
                      s_running ? APP_INTERCOM_AUDIO_STOPPING : APP_INTERCOM_AUDIO_IDLE,
             .revision = revision,
         };
-        /* A fájl betöltése még nem SIP-kapcsolódás: a gomb már ekkor is
-         * beszélgetést indítson, és előzze meg a csengőhang lejátszását. */
-        if (enabled && s_ringtone) s_status.state = APP_INTERCOM_AUDIO_RINGING;
     }
     unsigned epoch = s_epoch;
-    bool ringtone_task = s_ringtone;
     portEXIT_CRITICAL(&s_lock);
     if (enabled)
         audio_checkpoint(AUDIO_STAGE_START);
@@ -209,7 +224,7 @@ static esp_err_t audio_request(bool enabled, unsigned revision)
     unsigned stack_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
     /* A WAV fájlműveletei belső vermet kapnak, mint a működő webes lejátszás.
      * A SIP/AEC nagy beszélgetési verme továbbra is PSRAM-ban marad. */
-    if (ringtone_task) {
+    if (ringtone) {
         stack_size = 8192;
         stack_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
     }
@@ -236,20 +251,7 @@ static esp_err_t audio_request(bool enabled, unsigned revision)
 
 esp_err_t app_intercom_audio_request(bool enabled, unsigned revision)
 {
-    reap_audio();
-    portENTER_CRITICAL(&s_lock);
-    bool preempt = enabled && s_running && s_ringtone;
-    bool occupied = enabled && s_running && !preempt;
-    if (!enabled && s_pending_revision == revision) s_call_pending = false;
-    unsigned playing_revision = s_revision;
-    if (preempt) { s_call_pending = true; s_pending_revision = revision; }
-    portEXIT_CRITICAL(&s_lock);
-    if (occupied) return ESP_ERR_INVALID_STATE;
-    if (preempt) {
-        (void)audio_request(false, playing_revision);
-        return ESP_OK;
-    }
-    return audio_request(enabled, revision);
+    return audio_request(enabled, revision, false);
 }
 
 static bool wanted(unsigned epoch, unsigned revision)
@@ -261,6 +263,8 @@ static bool wanted(unsigned epoch, unsigned revision)
     portEXIT_CRITICAL(&s_lock);
     return request && app_loxone_intercom_call_permitted(revision, active);
 }
+
+typedef char audio_hw_error_t[128];
 
 typedef struct {
     int tcp, udp, listener, incoming, rtp;
@@ -281,7 +285,7 @@ typedef struct {
     aec_handle_t *aec;
     int16_t *buffers;
     unsigned frame_samples;
-    char hardware_error[128];
+    audio_hw_error_t hardware_error;
     bool speaker_open, microphone_open;
 } audio_call_t;
 
@@ -611,13 +615,13 @@ static bool pump_signaling(audio_call_t *call)
 }
 
 /* Minden lépés saját hibát ad; a DSP-hiba nem hangszóróhibaként jelenik meg. */
-static bool hardware_check(audio_call_t *call, const char *stage, int result)
+static bool hardware_check(audio_hw_error_t error, const char *stage, int result)
 {
     if (result == ESP_OK) {
         return true;
     }
-    snprintf(call->hardware_error, sizeof(call->hardware_error), "%s (%d)", stage, result);
-    ESP_LOGW(TAG, "%s", call->hardware_error);
+    snprintf(error, sizeof(audio_hw_error_t), "%s (%d)", stage, result);
+    ESP_LOGW(TAG, "%s", error);
     return false;
 }
 
@@ -652,7 +656,7 @@ static esp_err_t prepare_i2s(void)
 static bool open_hardware(audio_call_t *call)
 {
     /* Az I2S belső DMA-területe előbb készül el, mint a DSP és a hálózati hangpufferek. */
-    if (!hardware_check(call, "Hang I2C indítás", bsp_i2c_init()))
+    if (!hardware_check(call->hardware_error, "Hang I2C indítás", bsp_i2c_init()))
         return false;
     if (prepare_i2s() != ESP_OK) {
         snprintf(call->hardware_error, sizeof(call->hardware_error), "%s", s_i2s_error);
@@ -671,19 +675,19 @@ static bool open_hardware(audio_call_t *call)
     };
     audio_checkpoint(AUDIO_STAGE_AEC);
     call->aec = aec_create_from_config(&aec_config);
-    if (!hardware_check(call, "Visszhangszűrő memória", call->aec && call->aec->aec_handle ? ESP_OK : ESP_ERR_NO_MEM)) {
+    if (!hardware_check(call->hardware_error, "Visszhangszűrő memória", call->aec && call->aec->aec_handle ? ESP_OK : ESP_ERR_NO_MEM)) {
         return false;
     }
     int frame = aec_get_chunksize(call->aec);
     /* A kerethosszt az algoritmus adja meg, nem a SIP csomagmérete.
      * Páros és 16 bájtra igazított csatornapufferek szükségesek a DSP-hez. */
-    if (!hardware_check(call, "Visszhangszűrő keretméret",
+    if (!hardware_check(call->hardware_error, "Visszhangszűrő keretméret",
                         frame > 0 && frame <= AUDIO_FRAME_MAX && frame % 8 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE)) {
         return false;
     }
     call->frame_samples = (unsigned)frame;
     call->buffers = heap_caps_aligned_calloc(16, frame * (AUDIO_DECIMATION * (2 + AUDIO_CAPTURE_CHANNELS) + 4), sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!hardware_check(call, "Hangpuffer memória", call->buffers ? ESP_OK : ESP_ERR_NO_MEM) ||
+    if (!hardware_check(call->hardware_error, "Hangpuffer memória", call->buffers ? ESP_OK : ESP_ERR_NO_MEM) ||
         !wanted(call->epoch, call->revision)) {
         return false;
     }
@@ -693,22 +697,22 @@ static bool open_hardware(audio_call_t *call)
         audio_checkpoint(AUDIO_STAGE_SPEAKER);
         s_speaker = bsp_audio_codec_speaker_init();
     }
-    if (!hardware_check(call, "ES8311 hangszóró inicializálás", s_speaker ? ESP_OK : ESP_FAIL)) {
+    if (!hardware_check(call->hardware_error, "ES8311 hangszóró inicializálás", s_speaker ? ESP_OK : ESP_FAIL)) {
         return false;
     }
     if (!s_microphone) {
         audio_checkpoint(AUDIO_STAGE_MICROPHONE);
         s_microphone = bsp_audio_codec_microphone_init();
     }
-    if (!hardware_check(call, "ES7210 mikrofon inicializálás", s_microphone ? ESP_OK : ESP_FAIL)) {
+    if (!hardware_check(call->hardware_error, "ES7210 mikrofon inicializálás", s_microphone ? ESP_OK : ESP_FAIL)) {
         return false;
     }
     esp_codec_dev_sample_info_t format = {.sample_rate = AUDIO_RATE, .channel = 2, .bits_per_sample = 16};
     /* Sikertelen open után is bezárjuk az esetleg engedélyezett adatillesztést. */
     audio_checkpoint(AUDIO_STAGE_SPEAKER);
     call->speaker_open = true;
-    if (!hardware_check(call, "Hangszóró megnyitás", esp_codec_dev_open(s_speaker, &format)) ||
-        !hardware_check(call, "Hangszóró hangerő", esp_codec_dev_set_out_vol(s_speaker, (int)call->volume)) ||
+    if (!hardware_check(call->hardware_error, "Hangszóró megnyitás", esp_codec_dev_open(s_speaker, &format)) ||
+        !hardware_check(call->hardware_error, "Hangszóró hangerő", esp_codec_dev_set_out_vol(s_speaker, (int)call->volume)) ||
         !wanted(call->epoch, call->revision)) {
         return false;
     }
@@ -717,10 +721,10 @@ static bool open_hardware(audio_call_t *call)
     esp_codec_dev_sample_info_t microphone_format = format;
     microphone_format.channel = BSP_AUDIO_TDM_SLOT_COUNT;
     microphone_format.channel_mask = BSP_AUDIO_TDM_SLOT_MASK_FL;
-    return hardware_check(call, "Mikrofon megnyitás", esp_codec_dev_open(s_microphone, &microphone_format)) &&
-        hardware_check(call, "Mikrofon feloldás", esp_codec_dev_set_in_mute(s_microphone, call->microphone_gain == 0)) &&
-        hardware_check(call, "Hangszóró feloldás", esp_codec_dev_set_out_mute(s_speaker, call->volume == 0)) &&
-        hardware_check(call, "Mikrofon erősítés", esp_codec_dev_set_in_gain(s_microphone, call->microphone_gain * 0.375f));
+    return hardware_check(call->hardware_error, "Mikrofon megnyitás", esp_codec_dev_open(s_microphone, &microphone_format)) &&
+        hardware_check(call->hardware_error, "Mikrofon feloldás", esp_codec_dev_set_in_mute(s_microphone, call->microphone_gain == 0)) &&
+        hardware_check(call->hardware_error, "Hangszóró feloldás", esp_codec_dev_set_out_mute(s_speaker, call->volume == 0)) &&
+        hardware_check(call->hardware_error, "Mikrofon erősítés", esp_codec_dev_set_in_gain(s_microphone, call->microphone_gain * 0.375f));
 }
 
 static bool receive_audio(audio_call_t *call, const struct sockaddr_in *source,
@@ -850,6 +854,12 @@ static void media_session(audio_call_t *call)
     }
 }
 
+static void close_speaker(void)
+{
+    esp_codec_dev_set_out_mute(s_speaker, true);
+    esp_codec_dev_close(s_speaker);
+}
+
 static void close_call(audio_call_t *call)
 {
     audio_checkpoint(AUDIO_STAGE_CLOSE);
@@ -859,8 +869,7 @@ static void close_call(audio_call_t *call)
         esp_codec_dev_close(s_microphone);
     }
     if (call->speaker_open) {
-        esp_codec_dev_set_out_mute(s_speaker, true);
-        esp_codec_dev_close(s_speaker);
+        close_speaker();
     }
     if (call->aec) {
         aec_destroy(call->aec);
@@ -935,43 +944,43 @@ static bool ringtone_wanted(unsigned epoch, unsigned revision)
         !current.audio_active;
 }
 
-static void ringtone_play(audio_call_t *call, const app_intercom_snapshot_t *snapshot)
+static void ringtone_play(unsigned epoch, unsigned revision, const app_intercom_snapshot_t *snapshot)
 {
+    audio_hw_error_t error = "";
     size_t size = 0, offset, bytes;
     uint8_t *data = NULL;
     app_ringtone_load_status_t load_status = APP_RINGTONE_LOAD_INVALID;
-    if (ringtone_wanted(call->epoch, call->revision))
+    if (ringtone_wanted(epoch, revision))
         data = door_ringtone_load(snapshot->config.ringtone, &size, &load_status);
-    if (!ringtone_wanted(call->epoch, call->revision)) {
+    if (!ringtone_wanted(epoch, revision)) {
         free(data);
         return;
     }
     if (!data || !app_ringtone_wav(data, size, &offset, &bytes)) {
-        publish(call->epoch, APP_INTERCOM_AUDIO_ERROR,
+        publish(epoch, APP_INTERCOM_AUDIO_ERROR,
                 app_ringtone_load_message(data ? APP_RINGTONE_LOAD_INVALID : load_status));
         free(data);
         return;
     }
-    if (!hardware_check(call, "Hang I2C indítás", bsp_i2c_init()) || prepare_i2s() != ESP_OK) {
-        publish(call->epoch, APP_INTERCOM_AUDIO_ERROR, call->hardware_error[0] ? call->hardware_error : s_i2s_error);
+    if (!hardware_check(error, "Hang I2C indítás", bsp_i2c_init()) || prepare_i2s() != ESP_OK) {
+        publish(epoch, APP_INTERCOM_AUDIO_ERROR, error[0] ? error : s_i2s_error);
         free(data);
         return;
     }
     if (!s_speaker) s_speaker = bsp_audio_codec_speaker_init();
     esp_codec_dev_sample_info_t format = {.sample_rate = AUDIO_RATE, .channel = 2, .bits_per_sample = 16};
-    call->speaker_open = s_speaker != NULL;
-    if (!hardware_check(call, "Hangszóró inicializálás", s_speaker ? ESP_OK : ESP_FAIL) ||
-        !hardware_check(call, "Hangszóró megnyitás", esp_codec_dev_open(s_speaker, &format)) ||
-        !hardware_check(call, "Hangszóró hangerő", esp_codec_dev_set_out_vol(s_speaker, snapshot->config.speaker_volume)) ||
-        !hardware_check(call, "Hangszóró feloldás", esp_codec_dev_set_out_mute(s_speaker, snapshot->config.speaker_volume == 0))) {
-        publish(call->epoch, APP_INTERCOM_AUDIO_ERROR, call->hardware_error);
-        free(data);
-        return;
+    bool speaker_open = s_speaker != NULL;
+    if (!hardware_check(error, "Hangszóró inicializálás", s_speaker ? ESP_OK : ESP_FAIL) ||
+        !hardware_check(error, "Hangszóró megnyitás", esp_codec_dev_open(s_speaker, &format)) ||
+        !hardware_check(error, "Hangszóró hangerő", esp_codec_dev_set_out_vol(s_speaker, snapshot->config.speaker_volume)) ||
+        !hardware_check(error, "Hangszóró feloldás", esp_codec_dev_set_out_mute(s_speaker, snapshot->config.speaker_volume == 0))) {
+        publish(epoch, APP_INTERCOM_AUDIO_ERROR, error);
+        goto done;
     }
-    publish(call->epoch, APP_INTERCOM_AUDIO_RINGING, "");
+    publish(epoch, APP_INTERCOM_AUDIO_RINGING, "");
     do {
         size_t frames = app_ringtone_frames((uint32_t)bytes, AUDIO_RATE);
-        for (size_t position = 0; position < frames && ringtone_wanted(call->epoch, call->revision);) {
+        for (size_t position = 0; position < frames && ringtone_wanted(epoch, revision);) {
             int16_t output[320 * 2];
             size_t count = frames - position;
             if (count > 320) count = 320;
@@ -982,13 +991,14 @@ static void ringtone_play(audio_call_t *call, const app_intercom_snapshot_t *sna
                 output[i * 2] = output[i * 2 + 1] = sample;
             }
             if (esp_codec_dev_write(s_speaker, output, count * 4) != ESP_CODEC_DEV_OK) {
-                publish(call->epoch, APP_INTERCOM_AUDIO_ERROR, "A csengőhang lejátszása sikertelen.");
-                free(data);
-                return;
+                publish(epoch, APP_INTERCOM_AUDIO_ERROR, "A csengőhang lejátszása sikertelen.");
+                goto done;
             }
             position += count;
         }
-    } while (snapshot->config.ringtone_repeat && ringtone_wanted(call->epoch, call->revision));
+    } while (snapshot->config.ringtone_repeat && ringtone_wanted(epoch, revision));
+done:
+    if (speaker_open) close_speaker();
     free(data);
 }
 
@@ -1000,27 +1010,26 @@ static void audio_worker(void *argument)
     bool ringtone = s_ringtone;
     unsigned epoch = s_epoch, revision = s_revision;
     portEXIT_CRITICAL(&s_lock);
-    if (requested) {
-        audio_call_t *call = calloc(1, sizeof(*call));
-        app_intercom_snapshot_t snapshot;
-        if (call) {
-            call->tcp = call->udp = call->listener = call->incoming = call->rtp = -1;
-            call->epoch = epoch;
-            call->revision = revision;
-            if (ringtone) {
-                if (app_loxone_intercom_snapshot(&snapshot))
-                    ringtone_play(call, &snapshot);
-            } else if (wanted(epoch, revision) && app_loxone_intercom_snapshot(&snapshot)) {
+    app_intercom_snapshot_t snapshot;
+    if (requested && app_loxone_intercom_snapshot(&snapshot) && snapshot.revision == revision) {
+        if (ringtone) {
+            ringtone_play(epoch, revision, &snapshot);
+        } else if (wanted(epoch, revision)) {
+            /* A SIP-puffer, jitter buffer és hálózati munkaterület csak a beszélgetéshez kell. */
+            audio_call_t *call = calloc(1, sizeof(*call));
+            if (call) {
+                call->tcp = call->udp = call->listener = call->incoming = call->rtp = -1;
+                call->epoch = epoch;
+                call->revision = revision;
                 run_call(call, &snapshot);
+                close_call(call);
+                free(call);
+            } else {
+                publish(epoch, APP_INTERCOM_AUDIO_ERROR, "Nincs elég memória a hangkapcsolathoz.");
             }
-            close_call(call);
-            free(call);
-        } else {
-            publish(epoch, APP_INTERCOM_AUDIO_ERROR, "Nincs elég memória a hangkapcsolathoz.");
         }
     }
     portENTER_CRITICAL(&s_lock);
-    s_ringtone = false;
     if (s_epoch == epoch) {
         s_requested = false;
     }
@@ -1074,12 +1083,5 @@ void app_intercom_audio_poll(void)
     bell_seen = true;
     bell_revision = current.revision;
     if (!current.config.ringtone[0] || !current.config.speaker_volume || current.ringtone_silenced || current.audio_active) return;
-    portENTER_CRITICAL(&s_lock);
-    s_ringtone = true;
-    portEXIT_CRITICAL(&s_lock);
-    if (audio_request(true, current.revision) != ESP_OK) {
-        portENTER_CRITICAL(&s_lock);
-        s_ringtone = false;
-        portEXIT_CRITICAL(&s_lock);
-    }
+    (void)audio_request(true, current.revision, true);
 }
