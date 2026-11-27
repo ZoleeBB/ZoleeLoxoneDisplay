@@ -40,6 +40,10 @@ jobs:
           /tmp/test-panel-palette
           node --check main/web/admin.js
           python3 -m unittest discover -s tests -p "test_*.py" -v
+      - name: Exercise the Touch settings with desktop and mobile Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/touch-browser" --ignore-scripts --no-audit --no-fund --no-package-lock playwright@1.56.1
+          NODE_PATH="$RUNNER_TEMP/touch-browser/node_modules" CHROME_PATH="$(command -v google-chrome)" node tests/panel-config/touch-browser.cjs
       - name: Check out the matching LVGL simulator source
         uses: actions/checkout@v4
         with:
