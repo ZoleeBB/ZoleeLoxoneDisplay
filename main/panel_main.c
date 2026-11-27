@@ -11,6 +11,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mbedtls/platform_util.h"
@@ -42,7 +43,7 @@ static void boot_message(const char *message)
 static bool network_ready(void)
 {
     char address[16];
-    return board_network_address(address, sizeof(address));
+    return zld_card_online() && board_network_address(address, sizeof(address));
 }
 
 static bool pending_ota(void)
@@ -110,6 +111,10 @@ void app_main(void)
             }
         }
     }
+    if (!zld_card_session_start()) {
+        boot_failed("Az SD-kártya nem írható. Ellenőrizd a szabad helyet és a kártyát, majd indítsd újra a készüléket.");
+        return;
+    }
     if (panel_config_init() != ESP_OK) {
         boot_failed("Az SD-profil nem olvasható. Ellenőrizd a panel.json és panel.json.bak fájlokat, majd indítsd újra a kijelzőt.");
         return;
@@ -154,12 +159,21 @@ void app_main(void)
     uint32_t applied = 0;
     bool intercom = false;
     int64_t next_sample = 0;
+    int64_t next_card_check = 0;
     for (;;) {
-        uint32_t current = panel_config_generation();
-        if (current != applied && apply_profile(current, &intercom)) applied = current;
-        bool ready = zld_assets_ready();
-        panel_intercom_media_tick(intercom && ready);
         int64_t now = esp_timer_get_time();
+        if (now >= next_card_check) {
+            next_card_check = now + 2000000;
+            if (zld_card_needs_restart()) {
+                ESP_LOGW(TAG, "Az SD-kártya megváltozott vagy nem olvasható. Újraindítás.");
+                esp_restart();
+            }
+        }
+        bool card_online = zld_card_online();
+        uint32_t current = panel_config_generation();
+        if (card_online && current != applied && apply_profile(current, &intercom)) applied = current;
+        bool ready = card_online && zld_assets_ready();
+        panel_intercom_media_tick(intercom && ready);
         if (now >= next_sample) {
             next_sample = now + 1000000;
             panel_energy_stats_tick();
