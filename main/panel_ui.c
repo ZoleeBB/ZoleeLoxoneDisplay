@@ -16,6 +16,7 @@
 #include <time.h>
 
 static lv_obj_t *screen, *tabs_bar, *body, *saver_layer, *clock_label;
+static lv_obj_t *touch_divider, *brand_mark;
 static lv_obj_t *tab_buttons[LX_HOME_MAX_PAGES];
 static cJSON *profile;
 static const cJSON *tabs, *display;
@@ -42,6 +43,12 @@ static int number(const cJSON *o, const char *k, int fallback)
     return cJSON_IsNumber(v) ? v->valueint : fallback;
 }
 
+static uint32_t hex_color(const cJSON *o, const char *key, uint32_t fallback)
+{
+    const char *value = str(o, key);
+    return value[0] == '#' ? (uint32_t)strtoul(value + 1, NULL, 16) : fallback;
+}
+
 static void illuminate(int value)
 {
     if (brightness != value && board_set_brightness((unsigned)value) == ESP_OK)
@@ -58,7 +65,7 @@ static void delete_view(void)
         lv_obj_delete(body);
     if (tabs_bar)
         lv_obj_delete(tabs_bar);
-    body = tabs_bar = saver_layer = clock_label = NULL;
+    body = tabs_bar = saver_layer = clock_label = touch_divider = brand_mark = NULL;
     memset(tab_buttons, 0, sizeof(tab_buttons));
     saver = false;
     energy_page = false;
@@ -118,9 +125,7 @@ static void open_tab(unsigned index)
     bool image = !strcmp(str(bg, "type"), "image");
     uint32_t color = 0x293239;
     if (!image) {
-        const char *s = str(bg, "value");
-        if (*s == '#')
-            color = (uint32_t)strtoul(s + 1, NULL, 16);
+        color = hex_color(bg, "value", color);
         lv_obj_set_style_bg_color(body, lv_color_hex(color), 0);
     } else {
         lv_obj_t *wall = lv_image_create(body);
@@ -146,7 +151,7 @@ static void wake(void)
         return;
     panel_touch_close();
     lv_obj_delete(saver_layer);
-    saver_layer = clock_label = NULL;
+    saver_layer = clock_label = touch_divider = brand_mark = NULL;
     saver = false;
     lv_obj_remove_flag(tabs_bar, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_opa(tabs_bar, LV_OPA_COVER, 0);
@@ -169,7 +174,14 @@ static const uint32_t standby_ink = 0x8B8C8E;
 static const uint32_t standby_night_ink = 0xA04E4E;
 static bool night_confirmed;
 
-static void standby_brand(lv_obj_t *layer, bool touch_enabled)
+static lv_obj_t *standby_label(lv_obj_t *parent, const char *text, const lv_font_t *font)
+{
+    lv_obj_t *label = panel_label(parent, text, 0, 0, font, standby_ink);
+    lv_obj_remove_local_style_prop(label, LV_STYLE_TEXT_COLOR, 0);
+    return label;
+}
+
+static lv_obj_t *standby_brand(lv_obj_t *layer, bool touch_enabled)
 {
     lv_obj_t *line = lv_obj_create(layer);
     lv_obj_remove_style_all(line);
@@ -183,19 +195,30 @@ static void standby_brand(lv_obj_t *layer, bool touch_enabled)
         lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
         lv_obj_set_style_pad_left(line, 8, 0);
         lv_obj_set_style_pad_right(line, 8, 0);
-    }
+    } else
+        lv_obj_set_style_text_color(line, lv_color_hex(standby_ink), 0);
     lv_obj_align(line, LV_ALIGN_BOTTOM_MID, 0, -26);
 
-    panel_label(line, "Zolee", 0, 0, &app_font_24, standby_ink);
+    standby_label(line, "Zolee", &app_font_24);
     lv_obj_t *mark = lv_image_create(line);
     lv_obj_remove_flag(mark, LV_OBJ_FLAG_CLICKABLE);
     lv_image_set_src(mark, &loxone_wordmark);
     /* A 400 × 88-as szójel nagybetűi a kísérőszöveg 18 pixeles nagybetűivel egy magasságúak. */
     lv_obj_set_size(mark, 82, 18);
     lv_image_set_inner_align(mark, LV_IMAGE_ALIGN_STRETCH);
-    lv_obj_set_style_image_recolor(mark, lv_color_hex(standby_ink), 0);
     lv_obj_set_style_image_recolor_opa(mark, LV_OPA_COVER, 0);
-    panel_label(line, "Display", 0, 0, &app_font_24, standby_ink);
+    standby_label(line, "Display", &app_font_24);
+    return mark;
+}
+
+static void apply_standby_color(void)
+{
+    uint32_t day = touch_divider ? hex_color(get(profile, "touch"), "dayTextColor", standby_ink) : standby_ink;
+    lv_color_t ink = lv_color_hex(night_confirmed ? standby_night_ink : day);
+    lv_obj_set_style_text_color(saver_layer, ink, 0);
+    lv_obj_set_style_image_recolor(brand_mark, touch_divider ? ink : lv_color_hex(standby_ink), 0);
+    if (touch_divider)
+        lv_obj_set_style_line_color(touch_divider, ink, 0);
 }
 
 static void rest(void)
@@ -213,16 +236,16 @@ static void rest(void)
     bool touch_enabled = cJSON_IsTrue(get(touch, "enabled"));
     if (touch_enabled) {
         lv_obj_add_flag(tabs_bar, LV_OBJ_FLAG_HIDDEN);
-        panel_touch_open(saver_layer, generation, (unsigned)number(touch, "tapWindowMs", 400), wake);
+        touch_divider = panel_touch_open(saver_layer, generation, (unsigned)number(touch, "tapWindowMs", 400), wake);
     } else {
         lv_obj_set_style_opa(tabs_bar, LV_OPA_30, 0);
         lv_obj_set_style_bg_opa(saver_layer, LV_OPA_TRANSP, 0);
         lv_obj_add_event_cb(saver_layer, wake_event, LV_EVENT_PRESSED, NULL);
     }
-    clock_label = panel_label(saver_layer, clock_text, 0, 0, &app_font_standby_132,
-                              night_confirmed ? standby_night_ink : standby_ink);
+    clock_label = standby_label(saver_layer, clock_text, &app_font_standby_132);
     lv_obj_center(clock_label);
-    standby_brand(saver_layer, touch_enabled);
+    brand_mark = standby_brand(saver_layer, touch_enabled);
+    apply_standby_color();
     illuminate(number(display, "nightBrightness", 10));
 }
 
@@ -256,19 +279,25 @@ static void update_time(void)
     if (known)
         night = next;
     bool confirmed = known && next;
-    if (clock_label && confirmed != night_confirmed)
-        lv_obj_set_style_text_color(clock_label, lv_color_hex(confirmed ? standby_night_ink : standby_ink), 0);
-    night_confirmed = confirmed;
+    if (confirmed != night_confirmed) {
+        night_confirmed = confirmed;
+        if (saver_layer)
+            apply_standby_color();
+    }
 }
 
-static void refresh_config(void)
+static bool refresh_config(void)
 {
     unsigned current = panel_config_generation();
     if (profile && generation == current)
-        return;
+        return false;
     cJSON *next = panel_config_snapshot();
     if (!next)
-        return;
+        return false;
+    const cJSON *next_touch = get(next, "touch");
+    bool recolor_touch = touch_divider && cJSON_IsTrue(get(next_touch, "enabled")) &&
+                         hex_color(next_touch, "dayTextColor", standby_ink) !=
+                         hex_color(get(profile, "touch"), "dayTextColor", standby_ink);
     if (loaded) {
         app_loxone_home_visible(-1);
         delete_view();
@@ -281,11 +310,12 @@ static void refresh_config(void)
     tabs = get(profile, "tabs");
     if (active_tab >= (unsigned)cJSON_GetArraySize(tabs))
         active_tab = 0;
+    return recolor_touch;
 }
 
 static void service(void)
 {
-    refresh_config();
+    bool recolor_touch = refresh_config();
     update_time();
     const cJSON *lx = get(profile, "loxone");
     bool online = board_network_address(ip, sizeof(ip));
@@ -316,7 +346,10 @@ static void service(void)
     if (!loaded) {
         app_setup_ui_close();
         build_tabs();
-        open_tab(active_tab);
+        if (recolor_touch && number(display, "saverSeconds", 0) > 0 && !panel_intercom_active())
+            rest();
+        else
+            open_tab(active_tab);
         lv_display_trigger_activity(lv_display_get_default());
         loaded = true;
     }

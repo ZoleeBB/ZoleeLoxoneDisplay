@@ -36,17 +36,17 @@ static unsigned zone_at(lv_point_t p)
     return p.x < MID ? BOTTOM_LEFT : BOTTOM_RIGHT;
 }
 
-static void draw_boundaries(lv_obj_t *layer)
+static lv_obj_t *draw_boundaries(lv_obj_t *layer)
 {
     static const lv_point_precise_t diamond[] = {
         {MID, 0}, {SIDE, MID}, {MID, SIDE}, {0, MID}, {MID, 0}
     };
     lv_obj_t *stroke = lv_line_create(layer);
     lv_line_set_points(stroke, diamond, sizeof(diamond) / sizeof(diamond[0]));
-    lv_obj_set_style_line_color(stroke, lv_color_hex(0x171717), 0);
-    lv_obj_set_style_line_width(stroke, 1, 0);
+    lv_obj_set_style_line_width(stroke, 3, 0);
     lv_obj_remove_flag(stroke, LV_OBJ_FLAG_CLICKABLE);
     panel_box(layer, MID - 52, 704, 104, 5, 0x515356, 3);
+    return stroke;
 }
 
 static bool current_view(void)
@@ -151,17 +151,17 @@ static void input(lv_event_t *event)
     }
 }
 
-void panel_touch_open(lv_obj_t *layer, unsigned generation, unsigned tap_window_ms, void (*unlock)(void))
+lv_obj_t *panel_touch_open(lv_obj_t *layer, unsigned generation, unsigned tap_window_ms, void (*unlock)(void))
 {
     touch.generation = generation;
     touch.window_ms = tap_window_ms;
     touch.unlock = unlock;
-    draw_boundaries(layer);
     lv_obj_add_flag(layer, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_add_event_cb(layer, input, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(layer, input, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(layer, input, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(layer, input, LV_EVENT_PRESS_LOST, NULL);
+    return draw_boundaries(layer);
 }
 
 void panel_touch_close(void)
