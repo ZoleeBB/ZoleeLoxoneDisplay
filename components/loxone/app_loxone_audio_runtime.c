@@ -311,6 +311,7 @@ void app_loxone_audio_cancel_volume(const char *id, unsigned revision)
 
 bool app_loxone_audio_session(const char *username, const char *jwt, bool live)
 {
+    if (!live && !atomic_load(&audio_ready)) return true;
     if (!audio_initialize())
         return false;
     xSemaphoreTake(audio_lock, portMAX_DELAY);
@@ -374,8 +375,6 @@ static void audio_native_unavailable_locked(void)
 void app_loxone_audio_page(const lx_home_config_t *config, const cJSON *catalog,
                            int page, unsigned revision)
 {
-    if (!audio_initialize())
-        return;
     unsigned first = 0, count = 0;
     if (!config || page < 0 || !lx_home_page_range(config, (unsigned)page, &first, &count))
     {
@@ -386,6 +385,7 @@ void app_loxone_audio_page(const lx_home_config_t *config, const cJSON *catalog,
     for (unsigned i = first; i < first + count; ++i)
         has_audio |= config->cards[i].type == LX_HOME_CARD_AUDIO;
     if (!has_audio) { app_loxone_audio_hide(); return; }
+    if (!audio_initialize()) return;
     audio_page_t *next = audio_alloc(sizeof(*next));
     if (!next)
     {

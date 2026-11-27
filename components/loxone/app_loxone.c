@@ -632,7 +632,10 @@ static void worker(void *arg)
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_home_live = true;
         xSemaphoreGive(s_lock);
-        bool audio_pending = !app_loxone_audio_session(active->username, token, true);
+        bool has_audio = false;
+        for (unsigned i=0; i<s_home->card_count; ++i)
+            has_audio |= s_home->cards[i].type == LX_HOME_CARD_AUDIO;
+        bool audio_pending = has_audio && !app_loxone_audio_session(active->username, token, true);
         status("Kapcsolódva a Miniserverhez.");
         finish_refresh();
         mark_response();
@@ -658,7 +661,7 @@ static void worker(void *arg)
             if(now>=s_token_refresh_us) {
                 /* A válaszban kapott új JWT lesz a következő kapcsolódás hitelesítője. */
                 if(!renew_token(active,token))break;
-                audio_pending = !app_loxone_audio_session(active->username, token, true);
+                audio_pending = has_audio && !app_loxone_audio_session(active->username, token, true);
                 status("Kapcsolódva. A token megújítva.");
             }
 
