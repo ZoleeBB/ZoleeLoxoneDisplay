@@ -21,7 +21,7 @@ class RingtoneSync(unittest.TestCase):
     def test_real_source_zip_and_recovery(self):
         with tempfile.TemporaryDirectory() as work:
             work = Path(work)
-            for stub in ["esp_http_server.h", "esp_crt_bundle.h", "esp_http_client.h", "esp_heap_caps.h", "mbedtls/sha256.h"]:
+            for stub in ["esp_http_server.h", "esp_crt_bundle.h", "esp_http_client.h", "esp_heap_caps.h", "mbedtls/sha256.h","freertos/task.h","freertos/FreeRTOS.h"]:
                 path = work / stub
                 path.parent.mkdir(exist_ok=True)
                 path.touch()
@@ -32,7 +32,7 @@ class RingtoneSync(unittest.TestCase):
                 "-include", str(FIXTURE / "host.h"), "-I", str(work), "-I", str(TONES),
                 "-I", str(COMP / "update/include"), "-I", str(COMP / "door_media"),
                 str(FIXTURE / "verify.c"), str(COMP / "door_media/door_ringtone.c"),
-                *[str(TONES / name) for name in ("tone_source.c","tone_store.c","app_ringtone_zip.c","app_ringtone_wav.c")],
+                *[str(TONES / name) for name in ("tones.c","tone_source.c","tone_store.c","app_ringtone_zip.c","app_ringtone_wav.c")],
                 *json_flags, "-lz","-lcrypto","-lm","-o",str(binary)], check=True)
             bundle = work / "tones.zip"
             official = os.environ.get("ZLD_TEST_UPSTREAM_TONES")
@@ -66,5 +66,7 @@ class RingtoneSync(unittest.TestCase):
             if release_fixture and sums_fixture:
                 shutil.copy(release_fixture, work / "release.json")
                 shutil.copy(sums_fixture, sums)
+            subprocess.run([str(binary),"local",str(len(sounds)),selected],cwd=work,check=True)
+            shutil.rmtree(work / "card")
             for mode in ("install","reload"):
                 subprocess.run([str(binary),mode,str(len(sounds)),selected],cwd=work,check=True)

@@ -14,6 +14,8 @@
 bool tone_prepare(void);
 bool tone_install(const char *archive, const char *tag, const char *digest, char error[160]);
 bool tone_current_verified(const char *digest);
+bool tone_set_version(const char *tag,const char *digest);
+bool tone_install_local(const char *archive,char error[160]);
 bool tone_resolve(const char *name, char *path, size_t cap);
 cJSON *tone_list(char version[32]);
 enum { TONE_CHECK, TONE_NETWORK, TONE_CHECKSUM, TONE_ARCHIVE, TONE_WRITE, TONE_DONE };

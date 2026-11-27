@@ -5,6 +5,7 @@
 #include "zld_update.h"
 #include "mbedtls/sha256.h"
 #include <errno.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,14 +38,18 @@ static bool hash_file(const char *path, char sha[65]) {
 }
 static bool mkdir_ok(const char *dir) {return !mkdir(dir,0775) || errno==EEXIST;}
 bool tone_prepare(void) {return zld_card_verify() && mkdir_ok(TONE_ROOT);}
-static bool pointer_at(const char *p,char dir[65]) {
-    FILE *f=fopen(p,"rb"); if(!f) return false;
+enum pointer_state { POINTER_MISSING, POINTER_VALID, POINTER_ERROR };
+static enum pointer_state read_pointer(const char *p,char dir[65]) {
+    FILE *f=fopen(p,"rb");
+    if(!f) return errno==ENOENT?POINTER_MISSING:POINTER_ERROR;
     size_t n=fread(dir,1,64,f);
     bool ok=n==64 && fgetc(f)==EOF && !ferror(f);
-    fclose(f); dir[64]=0; return ok && hex_sha(dir);
+    if(fclose(f)) ok=false;
+    dir[64]=0;
+    return ok && hex_sha(dir)?POINTER_VALID:POINTER_ERROR;
 }
-static bool current(char dir[65]) {
-    return zld_card_online() && (pointer_at(ACTIVE,dir) || pointer_at(ACTIVE ".bak",dir));
+static bool pointer_at(const char *p,char dir[65]) {
+    return read_pointer(p,dir)==POINTER_VALID;
 }
 static bool put(const char *path, const char *s) {
     FILE *f=fopen(path,"wb"); if(!f) return false;
@@ -55,7 +60,12 @@ static bool put(const char *path, const char *s) {
 static cJSON *read_json(const char *dir,const char *file,size_t max) {
     char path[192]; snprintf(path,sizeof(path),TONE_ROOT "/%s/%s",dir,file);
     struct stat st;
-    if(stat(path,&st) || st.st_size<=0 || (uint64_t)st.st_size>max) return NULL;
+    if(stat(path,&st)) {
+        if(strcmp(file,"index.json") || errno!=ENOENT) return NULL;
+        snprintf(path,sizeof(path),TONE_ROOT "/%s/index.json.bak",dir);
+        if(stat(path,&st)) return NULL;
+    }
+    if(st.st_size<=0 || (uint64_t)st.st_size>max) return NULL;
     FILE *f=fopen(path,"rb"); if(!f) return NULL;
     size_t n=st.st_size;
     char *s=malloc(n+1);
@@ -67,6 +77,63 @@ static cJSON *read_json(const char *dir,const char *file,size_t max) {
 }
 static const char *field(const cJSON *o,const char *k) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(o,k));
+}
+static bool generation_at(const char *pointer,char dir[65]) {
+    if(!zld_card_online() || !pointer_at(pointer,dir)) return false;
+    cJSON *doc=read_json(dir,"index.json",16384);
+    cJSON *items=cJSON_GetObjectItemCaseSensitive(doc,"items");
+    int count=cJSON_GetArraySize(items);
+    const char *tag=field(doc,"version");
+    bool ok=hex_sha(field(doc,"archive")) && tag && *tag && strlen(tag)<=31 &&
+            cJSON_IsArray(items) && count>0 && count<=32;
+    for(int i=0;ok && i<count;i++) {
+        const cJSON *row=cJSON_GetArrayItem(items,i);
+        ok=app_ringtone_name(field(row,"name")) && field(row,"label") && hex_sha(field(row,"sha256"));
+    }
+    cJSON_Delete(doc);return ok;
+}
+static bool current(char dir[65]) {
+    return generation_at(ACTIVE,dir) || generation_at(ACTIVE ".bak",dir);
+}
+/* Only generation directories and their regular flat entries are managed by
+ * this installer. Preserve both live pointers while disposing of older versions. */
+static void clean_dir(const char *dir) {
+    if(!hex_sha(dir)) return;
+    char base[160], path[320];
+    snprintf(base,sizeof(base),TONE_ROOT "/%s",dir);
+    DIR *d=opendir(base); if(!d) return;
+    struct dirent *entry;
+    while((entry=readdir(d))) {
+        const char *name=entry->d_name;
+        if(!app_ringtone_name(name) && strcmp(name,"ringtone.json") && strcmp(name,"index.json") &&
+           strcmp(name,"index.json.bak") && strcmp(name,"index.json.new")) continue;
+        snprintf(path,sizeof(path),TONE_ROOT "/%s/%.64s",dir,name);unlink(path);
+    }
+    closedir(d);rmdir(base);
+}
+static void prune(void) {
+    char active[65]="",backup[65]="",obsolete[65];
+    if(!zld_card_verify() || read_pointer(ACTIVE,active)==POINTER_ERROR ||
+       read_pointer(ACTIVE ".bak",backup)==POINTER_ERROR) return;
+    /* Reopen the directory after a removal to avoid invalid FAT iterators. */
+    for(unsigned i=0;i<64;i++) {
+        DIR *d=opendir(TONE_ROOT); if(!d) return;
+        struct dirent *e; obsolete[0]=0;
+        while((e=readdir(d))) {
+            if(hex_sha(e->d_name) && strcmp(e->d_name,active) && strcmp(e->d_name,backup)) {
+                memcpy(obsolete,e->d_name,sizeof(obsolete));break;
+            }
+        }
+        closedir(d);
+        if(!*obsolete || !zld_card_verify()) break;
+        clean_dir(obsolete);
+        char path[160];snprintf(path,sizeof(path),TONE_ROOT "/%s",obsolete);
+        if(!access(path,F_OK)) break;
+    }
+}
+static bool wav_path(const char *dir,const char *name,char *path,size_t cap) {
+    int n=snprintf(path,cap,TONE_ROOT "/%s/%s",dir,name);
+    return n>0 && (size_t)n<cap && !access(path,R_OK);
 }
 static cJSON *metadata(const char *dir,const char *tag,const cJSON *report) {
     cJSON *source=read_json(dir,"ringtone.json",65536);
@@ -114,12 +181,42 @@ bool tone_current_verified(const char *digest) {
     }
     cJSON_Delete(doc); return ok;
 }
+bool tone_set_version(const char *tag,const char *digest) {
+    char dir[65],base[192],tmp[200],bak[200];
+    if(!tag || !*tag || strlen(tag)>31 || !hex_sha(digest) || !current(dir)) return false;
+    cJSON *doc=read_json(dir,"index.json",16384);
+    const char *old=field(doc,"version"),*sha=field(doc,"archive");
+    bool ok=old && hex_sha(sha) && !strcmp(sha,digest);
+    if(ok && !strcmp(old,tag)) { cJSON_Delete(doc);return true; }
+    cJSON *changed=ok?cJSON_GetObjectItemCaseSensitive(doc,"version"):NULL;
+    ok=changed && cJSON_SetValuestring(changed,tag);
+    char *body=ok?cJSON_PrintUnformatted(doc):NULL;
+    snprintf(base,sizeof(base),TONE_ROOT "/%s/index.json",dir);
+    snprintf(tmp,sizeof(tmp),"%s.new",base);snprintf(bak,sizeof(bak),"%s.bak",base);
+    ok=body && put(tmp,body) && zld_card_verify();
+    if(ok && !access(base,F_OK)) {
+        if(unlink(bak) && errno!=ENOENT) ok=false;
+        if(ok && rename(base,bak)) ok=false;
+    }
+    if(ok) ok=!rename(tmp,base);
+    cJSON_free(body);cJSON_Delete(doc);return ok;
+}
 bool tone_resolve(const char *name,char *path,size_t cap) {
     if(!app_ringtone_name(name) || !zld_card_online()) return false;
     char dir[65];
     if(current(dir)) {
-        int n=snprintf(path,cap,TONE_ROOT "/%s/%s",dir,name);
-        if(n>0 && (size_t)n<cap && !access(path,R_OK)) return true;
+        if(wav_path(dir,name,path,cap)) return true;
+        /* A later release may intentionally remove a tone. Use the backup
+         * only when this name genuinely belongs to the current index. */
+        cJSON *doc=read_json(dir,"index.json",16384);
+        const cJSON *rows=cJSON_GetObjectItemCaseSensitive(doc,"items"),*row;
+        bool missing=false;
+        cJSON_ArrayForEach(row,rows) {
+            const char *id=field(row,"name");
+            if(id && !strcmp(id,name)) {missing=true;break;}
+        }
+        cJSON_Delete(doc);
+        if(missing && generation_at(ACTIVE ".bak",dir) && wav_path(dir,name,path,cap)) return true;
     }
     if(strcmp(name,DEFAULT_TONE)) return false;
     return zld_asset_path("ringtones/" DEFAULT_TONE,path,cap) && !access(path,R_OK);
@@ -134,7 +231,7 @@ cJSON *tone_list(char version[32]) {
         const char *name=field(row,"name"),*label=field(row,"label");
         if(!app_ringtone_name(name) || !label) continue;
         char path[192]; snprintf(path,sizeof(path),TONE_ROOT "/%s/%s",dir,name);
-        if(access(path,R_OK)) continue;
+        if(access(path,R_OK) && !tone_resolve(name,path,sizeof(path))) continue;
         cJSON *item=cJSON_CreateObject();
         if(!item || !cJSON_AddItemToArray(out,item)) {cJSON_Delete(item);break;}
         cJSON_AddStringToObject(item,"name",name); cJSON_AddStringToObject(item,"label",label);
@@ -152,16 +249,26 @@ bool tone_install(const char *archive,const char *tag,const char *digest,char er
     char source_sha[65],old[65],dir[65],path[192],folder[160];
     if(!hex_sha(digest) || !tag || !*tag || strlen(tag)>31 || !tone_prepare() ||
        !hash_file(archive,source_sha) || strcmp(source_sha,digest)) return false;
+    prune();
     /* A repaired copy is extracted separately, even when reinstalling the same ZIP. */
     char basis[70]; snprintf(basis,sizeof(basis),"%s:%d",digest,0);
     uint8_t raw[32];
     if(mbedtls_sha256((const uint8_t*)basis,strlen(basis),raw,0)) return false;
     as_hex(raw,dir);
-    if(current(old) && !strcmp(dir,old)) {
+    enum pointer_state active_state=read_pointer(ACTIVE,old);
+    if(active_state==POINTER_ERROR) return false;
+    char backup[65]="";
+    enum pointer_state backup_state=read_pointer(ACTIVE ".bak",backup);
+    if(backup_state==POINTER_ERROR) return false;
+    /* Protect the usable old pointer even if its index is temporarily unreadable. */
+    const char *protected_dir=active_state==POINTER_VALID?old:backup;
+    if(!strcmp(dir,protected_dir)) {
         basis[65]='1';
         if(mbedtls_sha256((const uint8_t*)basis,strlen(basis),raw,0)) return false;
         as_hex(raw,dir);
     }
+    if(backup_state==POINTER_VALID && !strcmp(backup,dir) &&
+       !generation_at(ACTIVE,old) && generation_at(ACTIVE ".bak",backup)) return false;
     snprintf(folder,sizeof(folder),TONE_ROOT "/%s",dir);
     if(!mkdir_ok(folder)) return false;
     cJSON *report=cJSON_CreateObject(),*doc=NULL;
@@ -171,11 +278,28 @@ bool tone_install(const char *archive,const char *tag,const char *digest,char er
     char *body=ok?cJSON_PrintUnformatted(doc):NULL;
     snprintf(path,sizeof(path),TONE_ROOT "/%s/index.json",dir);
     ok=body && put(path,body) && zld_card_verify() && put(ACTIVE ".tmp",dir);
-    if(ok && pointer_at(ACTIVE,old)) {
-        if(unlink(ACTIVE ".bak") && errno!=ENOENT) ok=false;
-        if(ok && rename(ACTIVE,ACTIVE ".bak")) ok=false;
-    } else if(ok && unlink(ACTIVE) && errno!=ENOENT) ok=false;
+    if(ok) {
+        enum pointer_state previous=read_pointer(ACTIVE,old);
+        if(previous==POINTER_ERROR) ok=false;
+        else if(previous==POINTER_VALID) {
+            if(generation_at(ACTIVE,old)) {
+                if(unlink(ACTIVE ".bak") && errno!=ENOENT) ok=false;
+                if(ok && rename(ACTIVE,ACTIVE ".bak")) ok=false;
+            } else if(generation_at(ACTIVE ".bak",old)) {
+                /* Preserve a known readable backup during recovery. */
+                ok=!unlink(ACTIVE);
+            } else ok=false;
+        }
+    }
     if(ok) ok=rename(ACTIVE ".tmp",ACTIVE)==0;
     cJSON_free(body);cJSON_Delete(doc);cJSON_Delete(report);
+    prune();
     return ok;
+}
+
+bool tone_install_local(const char *archive,char error[160]) {
+    char digest[65];
+    if(!hash_file(archive,digest)) return false;
+    /* An upload identical to an installed official release retains its verified origin. */
+    return tone_current_verified(digest) || tone_install(archive,"Helyi csomag",digest,error);
 }

@@ -1,6 +1,7 @@
 #include "host.h"
 #include "zld_update.h"
 #include "tone_store.h"
+#include "tones.h"
 #include "door_ringtone.h"
 #include <assert.h>
 #include <errno.h>
@@ -45,7 +46,20 @@ bool zld_asset_path(const char *n,char *out,size_t cap) {
     if(strcmp(n,"ringtones/tubular-chime.wav")) return false;
     return snprintf(out,cap,"bundled.wav")<(int)cap;
 }
-bool zld_ringtone_path(const char *name,char *out,size_t cap) {return tone_resolve(name,out,cap);}
+static bool held;
+bool zld_update_enter(void) {if(held)return false;held=true;return true;}
+void zld_update_leave(void) {assert(held);held=false;}
+static esp_err_t (*uploader)(httpd_req_t*);
+int httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *route) {
+    if(!strcmp(route->uri,"/api/ringtones/upload")) uploader=route->handler;
+    return 0;
+}
+static bool authorize(httpd_req_t *r,bool write) {return true;}
+static void request_upload(const char *data,size_t n,size_t avail,const char *expected) {
+    httpd_req_t r={.content_len=n,.data=data,.available=avail,.uri="/api/ringtones/upload"};
+    assert(uploader && uploader(&r)==0 && !strncmp(r.status,expected,3) && !held);
+}
+
 static void list_count(int expected,bool installed) {
     char tag[32];cJSON *list=tone_list(tag);
     assert(list && cJSON_GetArraySize(list)==expected);
@@ -69,6 +83,18 @@ int main(int argc,char **argv) {
     if(!strcmp(argv[1],"reload")) {
         list_count(expected,true);listen(selected);return 0;
     }
+    if(!strcmp(argv[1],"local")) {
+        assert(zld_tones_register((void*)1,authorize)==0);
+        assert(!mkdir("card",0777));assert(!mkdir("card/zld",0777));
+        FILE *f=fopen("tones.zip","rb"); assert(f); fseek(f,0,SEEK_END);
+        size_t n=ftell(f);rewind(f);char *raw=malloc(n);assert(raw && fread(raw,1,n,f)==n);fclose(f);
+        request_upload(raw,n,n/2,"503");list_count(1,false);
+        request_upload(raw,TONE_ZIP_LIMIT+1,0,"413");
+        request_upload(raw,n,n,"200");listen(selected);
+        char tag[32];cJSON *items=tone_list(tag);
+        assert(!strcmp(tag,"Helyi csomag") && cJSON_GetArraySize(items)==expected);cJSON_Delete(items);
+        raw[0]=0;request_upload(raw,n,n,"400");listen(selected);free(raw);return 0;
+    }
     assert(!mkdir("card",0777));assert(!mkdir("card/zld",0777));
     list_count(1,false);
     assert(!door_ringtone_load("",&size,&status) && size==0);
@@ -77,7 +103,11 @@ int main(int argc,char **argv) {
     network_fault=2;assert(!tone_source_download(&reason));assert(zip_requests==1);list_count(1,false);
     network_fault=0;assert(tone_source_download(&reason));assert(zip_requests==2);
     list_count(expected,true);listen(selected);
-    assert(tone_source_download(&reason));assert(zip_requests==2); /* same release: no ZIP GET */
+    FILE *sums=fopen("SHA256SUMS.txt","rb");assert(sums);
+    char full[8192],digest[65];size_t bytes=fread(full,1,sizeof(full)-1,sums);full[bytes]=0;fclose(sums);
+    assert(tone_checksum(full,"ZoleeEnergyFlowDisplay-v4.0.0-ringtones.zip",digest));
+    assert(tone_set_version("v3.9.0",digest)); /* same official ZIP in a later tag */
+    assert(tone_source_download(&reason));assert(zip_requests==2); list_count(expected,true); /* later release unchanged: new tag, no ZIP GET */
     char path[256];assert(zld_ringtone_path(selected,path,sizeof(path)));
     FILE *f=fopen(path,"r+b");assert(f);assert(!fseek(f,-1,SEEK_END));int old=fgetc(f);
     assert(!fseek(f,-1,SEEK_END));fputc(old^0x22,f);fclose(f);

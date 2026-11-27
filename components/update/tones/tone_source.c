@@ -155,7 +155,9 @@ bool tone_source_download(unsigned *reason) {
     *reason=TONE_CHECKSUM;
     if(!fetch(url,16384,&body,NULL,0) || !tone_checksum(body,name,digest)) goto done;
     free(body);body=NULL;
-    if(tone_current_verified(digest)) {ok=true;goto done;}
+    if(tone_current_verified(digest)) {
+        *reason=TONE_WRITE;ok=tone_set_version(tag,digest);goto done;
+    }
     *reason=TONE_WRITE;
     if(!tone_prepare()) goto done;
     atomic_store(&tone_total_bytes,(unsigned)bytes);

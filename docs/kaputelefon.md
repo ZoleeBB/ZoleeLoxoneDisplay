@@ -17,3 +17,7 @@ A csengőhangcsomag letöltése a panelről indítható. A panel megkeresi a **Z
 A panel ellenőrzi a kiadáshoz mellékelt **SHA256SUMS.txt** jegyzéket, a ZIP épségét, a névjegyzéket és a hangformátumot. A csomag legfeljebb 32 darab, egyenként legfeljebb 60 másodperces, 16 kHz-es mono PCM16 WAV-hangot tartalmazhat. Az eredeti nevük, címük és a forrásprojekt licencadatai a kártyára kerülnek. A lejátszó csak csengetéskor olvassa be a mentett hangot.
 
 Újabb szinkronizáláskor az ép, azonos csomagot a készülék megtartja. Letöltési hiba, betelt SD vagy megszakítás esetén az előző telepítés használható marad. A letöltés gombbal újrapróbálható. A képcsomagban kapott alapértelmezett csőharang külön is elérhető. A csengőhangcsomag telepítése és a firmware-frissítés egymás után futtatható.
+
+### Helyi ZIP telepítése
+
+Ha a kijelzőnek nincs internetkapcsolata, töltsd le a forrásprojekt kiadásából a `-ringtones.zip` végű fájlt a számítógépre. Válaszd ki a Kaputelefon lapon a helyi ZIP-feltöltést. Az eredeti csomagot változtatás nélkül add meg. A panel ugyanúgy ellenőrzi a ZIP-et, a fájlneveket, a hangjegyzéket, a CRC-t és minden WAV-ot. A legfeljebb 8 MiB-os helyi csomag eredetét a készülék nem tudja a GitHub kiadási jegyzékéhez hitelesíteni, ezért a webfelületen **Helyi csomag** néven jelenik meg. Az online szinkronizálás később egyezteti a csomagot a kiadással. A kártyán az aktív és a legutolsó mentett csomag marad meg a helyreállításhoz.

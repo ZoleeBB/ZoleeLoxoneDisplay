@@ -9,7 +9,28 @@
 #define ESP_FAIL -1
 typedef int esp_err_t;
 typedef void *httpd_handle_t;
-typedef struct {int unused;} httpd_req_t;
+typedef struct {
+    size_t content_len,available,offset;
+    const char *data,*uri;
+    char status[96];
+} httpd_req_t;
+typedef struct {const char *uri;int method;esp_err_t (*handler)(httpd_req_t *r);} httpd_uri_t;
+#define HTTP_POST 1
+#define HTTP_GET 2
+#define httpd_resp_set_type(r,t) ((void)0)
+#define httpd_resp_set_hdr(r,k,v) ((void)0)
+#define httpd_resp_sendstr(r,s) (0)
+#define httpd_resp_set_status(r,s) strcpy((r)->status,(s))
+int httpd_register_uri_handler(httpd_handle_t server,const httpd_uri_t *route);
+#define httpd_unregister_uri_handler(s,p,m) ((void)0)
+static inline int httpd_req_recv(httpd_req_t *r,char *p,size_t n) {
+    if(n>r->available-r->offset) n=r->available-r->offset;
+    if(n>337) n=337;
+    memcpy(p,r->data+r->offset,n);r->offset+=n;return (int)n;
+}
+#define xTaskCreate(f,n,s,a,p,h) (0)
+#define pdPASS 1
+#define vTaskDelete(t) ((void)0)
 typedef SHA256_CTX mbedtls_sha256_context;
 #define mbedtls_sha256_init(h) ((void)(h))
 #define mbedtls_sha256_starts(h,b) (SHA256_Init(h) != 1)

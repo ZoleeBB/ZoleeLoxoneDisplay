@@ -4,6 +4,8 @@
 #include "freertos/task.h"
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
 
 enum { IDLE, BUSY, DONE, FAILED };
 static atomic_int state;
@@ -32,6 +34,39 @@ static esp_err_t start(httpd_req_t *r) {
         return reply(r,"503 Service Unavailable","A letöltéshez jelenleg nincs elegendő szabad memória.");
     }
     return reply(r,"202 Accepted","OK");
+}
+static esp_err_t upload(httpd_req_t *r) {
+    if(!allow(r,true)) return ESP_OK;
+    if(r->content_len<22 || r->content_len>TONE_ZIP_LIMIT)
+        return reply(r,"413 Content Too Large","A csengőhang ZIP mérete 22 bájt és 8 MiB közé eshet.");
+    if(!zld_update_enter())
+        return reply(r,"409 Conflict","A kijelzőn már folyamatban van egy frissítés.");
+    int old=atomic_load(&state);
+    if(old==BUSY || !atomic_compare_exchange_strong(&state,&old,BUSY)) {
+        zld_update_leave();return reply(r,"409 Conflict","A csengőhangcsomag frissítése folyamatban van.");
+    }
+    atomic_store(&tone_total_bytes,(unsigned)r->content_len);atomic_store(&tone_done_bytes,0);
+    FILE *f=tone_prepare()?fopen(TONE_ARCHIVE_PATH,"wb"):NULL;
+    bool ok=f!=NULL; size_t left=r->content_len;
+    char *buf=malloc(2048);
+    if(!buf) ok=false;
+    while(ok && left) {
+        int n=httpd_req_recv(r,buf,left>2048?2048:left);
+        if(n<=0 || !zld_card_online() || fwrite(buf,1,n,f)!=(size_t)n) {ok=false;break;}
+        left-=n;atomic_store(&tone_done_bytes,(unsigned)(r->content_len-left));
+    }
+    free(buf);
+    if(f && fclose(f)) ok=false;
+    unsigned reason=TONE_WRITE;
+    char error[160]="";
+    if(ok) {reason=TONE_ARCHIVE;ok=tone_install_local(TONE_ARCHIVE_PATH,error);}
+    unlink(TONE_ARCHIVE_PATH);
+    atomic_store(&failure,reason);atomic_store(&state,ok?DONE:FAILED);
+    zld_update_leave();
+    if(ok) return reply(r,"200 OK","A helyi csengőhangcsomag telepítve.");
+    return reply(r,reason==TONE_ARCHIVE?"400 Bad Request":"503 Service Unavailable",
+        *error?error:reason==TONE_ARCHIVE?"A ZIP, a névjegyzék vagy a hangfájl sérült vagy nem támogatott.":
+                                    "A feltöltés megszakadt vagy az SD-kártya nem írható.");
 }
 static esp_err_t status(httpd_req_t *r) {
     if(!allow(r,false)) return ESP_OK;
@@ -65,6 +100,11 @@ esp_err_t zld_tones_register(httpd_handle_t server,zld_update_authorize_t fn) {
     esp_err_t e=httpd_register_uri_handler(server,&get);
     if(e!=ESP_OK) return e;
     e=httpd_register_uri_handler(server,&post);
+    if(e==ESP_OK) {
+        const httpd_uri_t local={.uri="/api/ringtones/upload",.method=HTTP_POST,.handler=upload};
+        e=httpd_register_uri_handler(server,&local);
+        if(e!=ESP_OK) httpd_unregister_uri_handler(server,post.uri,post.method);
+    }
     if(e!=ESP_OK) httpd_unregister_uri_handler(server,get.uri,get.method);
     return e;
 }
