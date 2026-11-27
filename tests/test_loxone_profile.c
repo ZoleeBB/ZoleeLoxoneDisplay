@@ -34,6 +34,7 @@ int main(void)
     assert(model->generation == 13);
     assert(!strcmp(model->connection.password,"integration-secret"));
     assert(model->home.intercom.enabled && !strcmp(model->home.intercom.video_password,"video-secret"));
+    assert(!strcmp(model->home.intercom.gate.name, "Kapunyitás"));
     assert(model->home.page_count == 3 && model->home.card_count == 1);
     assert(model->home.pages[1].first_card==0 && model->home.cards[0].type==LX_HOME_CARD_IRC);
     uint8_t delta[72];

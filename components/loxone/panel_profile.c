@@ -118,6 +118,7 @@ bool panel_profile_read(panel_profile_t *out, const cJSON *panel, const char *pa
     ic->ringtone_repeat = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(door, "ringtoneRepeat"));
     ic->gate.type = LX_HOME_CARD_PULSE;
     strcpy(ic->gate.id, LX_INTERCOM_GATE_ID);
+    strcpy(ic->gate.name, "Kapunyitás");
     return uuid(ic->bell_uuid, text(door, "uuid")) && uuid(ic->gate.control_uuid, text(door, "gateUuid")) &&
         copy_text(ic->stream_url, sizeof(ic->stream_url), text(door, "cameraUrl")) &&
         copy_text(ic->video_username, sizeof(ic->video_username), text(door, "cameraUser")) &&
