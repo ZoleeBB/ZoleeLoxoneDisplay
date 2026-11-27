@@ -15,6 +15,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    name: Regression tests
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install host test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcjson-dev libmbedtls-dev libssl-dev
+      - name: Exercise Loxone controls and intercom protocol
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -I/usr/include/cjson -Icomponents/loxone/include -Icomponents/loxone tests/test_loxone_profile.c components/loxone/panel_profile.c components/loxone/app_loxone_model.c -lcjson -lm -o /tmp/test-profile
+          /tmp/test-profile
+          cc -std=gnu11 -Icomponents/door_media/include tests/test_intercom_audio_protocol.c components/door_media/app_intercom_audio_protocol.c -lm -o /tmp/test-intercom
+          /tmp/test-intercom
+      - name: Check persistence, web editor, update transactions and SD catalog
+        run: |
+          tests/panel-config/run.sh
+          node --check main/web/admin.js
+          python3 -m unittest discover -s tests -p test_update.py -v
+          python3 tests/test_visual_assets.py
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -52,7 +74,7 @@ jobs:
   release:
     name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [checks, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

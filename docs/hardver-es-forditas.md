@@ -47,4 +47,4 @@ A hozzá tartozó `.zld` tartalmazza az SD-erőforrásokat is. Az eszköz webes 
 
 - [Waveshare műszaki adatok és csatlakozók](https://docs.waveshare.com/ESP32-P4-WIFI6-Touch-LCD-4B)
 - [Waveshare BSP 3.0.1 az ESP Component Registryben](https://components.espressif.com/components/waveshare/esp32_p4_wifi6_touch_lcd_4b/versions/3.0.1/readme)
-- [Waveshare példaprogamok és kapcsolási rajzok](https://github.com/waveshareteam/ESP32-P4-WIFI6-Touch-LCD-4B)
+- [Waveshare példaprogramok és kapcsolási rajzok](https://github.com/waveshareteam/ESP32-P4-WIFI6-Touch-LCD-4B)
