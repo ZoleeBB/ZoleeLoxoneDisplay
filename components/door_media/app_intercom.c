@@ -349,8 +349,8 @@ bool app_intercom_idle(void)
 
 esp_err_t app_intercom_start(void)
 {
-    /* Induláskor nincs kamera-/hangfeladat; az engedélyezett hang DMA-ja előre foglalódik. A UI csak csengetéskor
-     * indít videófeladatot, a hangfeladatot pedig kizárólag a beszélgetés gomb. */
+    /* A konfigurált szolgáltatás ekkor még csak fogadókész. A kamera és a
+     * hang hardver-erőforrásait az első médiafeladat foglalja le. */
     s_ready = true;
     return app_intercom_audio_start();
 }

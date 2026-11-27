@@ -3,7 +3,8 @@
 #include "panel_intercom_ui.h"
 #include "app_intercom.h"
 #include "app_intercom_audio.h"
-#include "app_loxone.h"
+#include "zld_loxone.h"
+#include "app_loxone_audio_media.h"
 #include <stdatomic.h>
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -78,8 +79,11 @@ static void open_gate(lv_event_t* event)
     if (last_gate && now - last_gate < 1000000)
         return;
     last_gate = now;
-    if (app_loxone_intercom_gate_request(rendered_generation) == ESP_OK)
+    if (app_loxone_intercom_gate_request(rendered_generation) == ESP_OK) {
         lv_obj_add_state(gate, LV_STATE_DISABLED);
+    } else {
+        app_intercom_ui_status("A kapunyitás nem küldhető. Ellenőrizd a Miniserver kapcsolatát.", rendered_generation);
+    }
 }
 
 static lv_obj_t* button(int x, lv_event_cb_t callback)
@@ -114,9 +118,13 @@ void panel_intercom_media_tick(bool configured)
     if (configured) app_intercom_audio_poll();
     app_intercom_snapshot_t snapshot = { 0 };
     bool active = atomic_load(&media_configured) && app_loxone_intercom_snapshot(&snapshot) && (snapshot.ringing || snapshot.audio_active);
+    bool was_active = atomic_exchange(&call_active, active);
+    if (active != was_active)
+        zld_loxone_pause_media(active);
+    /* A borítók dekódolója még takaríthat. Csak ezután foglaljuk a két nagy képpuffert. */
+    if (active && !app_loxone_audio_media_idle()) return;
     portENTER_CRITICAL(&frame_lock);
     bool need = active && !front && !spare;
-    atomic_store(&call_active, active);
     portEXIT_CRITICAL(&frame_lock);
     if (need) {
         uint8_t* a = heap_caps_malloc(VIDEO_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -158,7 +166,7 @@ void panel_intercom_media_tick(bool configured)
 void panel_intercom_ui_tick(lv_obj_t *screen)
 {
     (void)screen;
-    if (!atomic_load(&media_configured) && !overlay) return;
+    if (!panel_intercom_active() && !overlay) return;
     app_intercom_snapshot_t snapshot = { 0 };
     bool active = atomic_load(&media_configured) && app_loxone_intercom_snapshot(&snapshot) && (snapshot.ringing || snapshot.audio_active);
     if (!active) {
@@ -250,7 +258,7 @@ void panel_intercom_ui_tick(lv_obj_t *screen)
                                                                                                : "");
     if (snapshot.gate_supported) {
         lv_obj_remove_flag(gate, LV_OBJ_FLAG_HIDDEN);
-        text_if_changed(lv_obj_get_child(gate, 0), snapshot.config.gate.name);
+        text_if_changed(lv_obj_get_child(gate, 0), *snapshot.config.gate.name ? snapshot.config.gate.name : "Kapunyitás");
         if (!snapshot.connected || snapshot.command_pending)
             lv_obj_add_state(gate, LV_STATE_DISABLED);
         else
